@@ -9,9 +9,9 @@
 #include <thread>
 #include <vector>
 
-#include "request.hpp"
-#include "requestQueue.hpp"
-#include "socket.hpp"
+#include "elio/net/socket.hpp"
+#include "elio/uring/request.hpp"
+#include "elio/uring/requestQueue.hpp"
 
 class EchoClient {
     public:
@@ -30,21 +30,21 @@ class EchoClient {
     private:
 	void eventLoop();
 	void onCompletedConnect();
-	void onCompletedRead(const ReadRequest &completed_request);
-	void onCompletedWrite(const WriteRequest &completed_request);
+	void onCompletedRead(const elio::uring::ReadRequest &completed_request);
+	void onCompletedWrite(const elio::uring::WriteRequest &completed_request);
 	void addPendingWriteRequests();
 
-	RequestQueue requests;
+	elio::uring::RequestQueue requests;
 	std::array<std::byte, 2048> reception_buffer{};
 	std::jthread worker_thread{};
 	std::atomic_bool should_continue = true;
 
-	ConnectRequest connect_request{};
-	ReadRequest read_request{};
-	std::vector<WriteRequest> write_requests{};
+	elio::uring::ConnectRequest connect_request{};
+	elio::uring::ReadRequest read_request{};
+	std::vector<elio::uring::WriteRequest> write_requests{};
 	std::mutex write_requests_mutex{};
 
-	using Socket = ClientSocket<TCP>;
+	using Socket = elio::net::ClientSocket<elio::net::TCP>;
 	std::unique_ptr<Socket> socket{};
 	bool is_connected = false;
 	std::mutex connection_mutex{};
@@ -65,7 +65,7 @@ EchoClient::SendStatus EchoClient::send(std::string &&message)
 	if (!isConnected())
 		return DISCONNECTED;
 
-	WriteRequest request;
+	elio::uring::WriteRequest request;
 	request.fd = socket->raw();
 	std::span<std::byte> as_bytes{ reinterpret_cast<std::byte *>(message.data()), message.size() };
 	request.bytes_written = { std::make_move_iterator(as_bytes.begin()), std::make_move_iterator(as_bytes.end()) };
@@ -88,7 +88,7 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 	connect_request.socket_fd = socket->raw();
 	std::tie(connect_request.addr, connect_request.addrlen) = socket->getSockAddr();
 	auto status = requests.add(connect_request);
-	if (status == QUEUE_FULL)
+	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error connecting: IO queue full");
 
 	worker_thread = std::jthread([this]() { eventLoop(); });
@@ -110,8 +110,8 @@ void EchoClient::onCompletedConnect()
 {
 	read_request.fd = socket->raw();
 	read_request.bytes_read = reception_buffer;
-	AddRequestStatus status = requests.add(read_request);
-	if (status == QUEUE_FULL)
+	elio::uring::AddRequestStatus status = requests.add(read_request);
+	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error reading: IO queue full");
 
 	{
@@ -123,13 +123,13 @@ void EchoClient::onCompletedConnect()
 	std::cout << "Client: Connected to server (socket " << socket->raw() << ")\n";
 }
 
-void EchoClient::onCompletedRead(const ReadRequest &completed_request)
+void EchoClient::onCompletedRead(const elio::uring::ReadRequest &completed_request)
 {
 	std::cout << "Client: Received \"" << reinterpret_cast<char *>(completed_request.bytes_read.data()) << "\""
 		  << std::endl;
 }
 
-void EchoClient::onCompletedWrite(const WriteRequest &completed_request)
+void EchoClient::onCompletedWrite(const elio::uring::WriteRequest &completed_request)
 {
 	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(completed_request.bytes_written.data()) << "\""
 		  << std::endl;
@@ -143,13 +143,15 @@ void EchoClient::addPendingWriteRequests()
 		if (write_requests.empty())
 			return;
 
-		for (const WriteRequest &request : write_requests)
+		for (const elio::uring::WriteRequest &request : write_requests)
 			requests.add(request);
 	}
 }
 
 void EchoClient::eventLoop()
 {
+	using namespace elio::uring;
+
 	while (should_continue) {
 		addPendingWriteRequests();
 		SubmitStatus submit_status = requests.submit(std::chrono::milliseconds(100));

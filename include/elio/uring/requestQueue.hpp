@@ -10,8 +10,11 @@
 
 #include <liburing.h>
 
-#include "chronoUtils.hpp"
-#include "request.hpp"
+#include "elio/time/chronoUtils.hpp"
+#include "elio/uring/request.hpp"
+
+namespace elio::uring
+{
 
 enum AddRequestStatus { OK = 0, QUEUE_FULL };
 enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_READY = -EAGAIN };
@@ -72,7 +75,7 @@ inline SubmitStatus RequestQueue::submit(std::chrono::milliseconds timeout)
 	if (timeout.count() <= 0)
 		return SubmitStatus{ io_uring_submit_and_wait(&ring, WAITED_COMPLETIONS) };
 
-	__kernel_timespec timeout_ = chrono::utils::to_timespec(timeout);
+	__kernel_timespec timeout_ = elio::time::chrono_utils::to_timespec(timeout);
 	io_uring_cqe *completed_events = nullptr;
 	int completions = io_uring_submit_and_wait_timeout(&ring, &completed_events, WAITED_COMPLETIONS, &timeout_,
 							   BLOCKED_SIGNALS);
@@ -158,4 +161,6 @@ inline io_uring_sqe *RequestQueue::getNewSubmissionQueueEntry()
 		sqe = io_uring_get_sqe(&ring);
 	}
 	return sqe;
+}
+
 }

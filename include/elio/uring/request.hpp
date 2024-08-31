@@ -7,6 +7,8 @@
 
 #include <liburing.h>
 
+namespace elio::uring
+{
 enum class Operation : uint8_t { ACCEPT, CONNECT, READ, WRITE };
 
 inline Operation getOperation(const io_uring_cqe *cqe)
@@ -41,3 +43,4 @@ struct WriteRequest : Request<Operation::WRITE> {
 	int fd = -1;
 	std::vector<std::byte> bytes_written{};
 };
+}

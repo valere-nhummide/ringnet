@@ -2,7 +2,7 @@
 
 #include <chrono>
 
-namespace chrono::utils
+namespace elio::time::chrono_utils
 {
 template <typename Rep, typename Period>
 __kernel_timespec to_timespec(const std::chrono::duration<Rep, Period> &duration)
@@ -12,4 +12,4 @@ __kernel_timespec to_timespec(const std::chrono::duration<Rep, Period> &duration
 	nanoseconds ns = duration_cast<nanoseconds>(duration) - duration_cast<nanoseconds>(s);
 	return __kernel_timespec{ .tv_sec = s.count(), .tv_nsec = ns.count() };
 }
-} // namespace chrono::utils
+} // namespace elio::time::chrono_utils

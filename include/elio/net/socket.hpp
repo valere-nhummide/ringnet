@@ -14,6 +14,8 @@
 #include <type_traits>
 #include <variant>
 
+namespace elio::net
+{
 enum IPVersion : decltype(AF_UNSPEC) { UNKNOWN = AF_UNSPEC, IPv4 = AF_INET, IPv6 = AF_INET6 };
 
 enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOCK_DGRAM, TCP = SOCK_STREAM };
@@ -134,3 +136,4 @@ class ServerSocket : public detail::BaseSocket<DP> {
 		return ::listen(this->fd, max_pending_requests);
 	}
 };
+} // namespace elio::net

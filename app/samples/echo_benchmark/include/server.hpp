@@ -7,8 +7,9 @@
 #include <thread>
 #include <unordered_map>
 
-#include "requestQueue.hpp"
-#include "socket.hpp"
+#include "elio/net/socket.hpp"
+#include "elio/uring/request.hpp"
+#include "elio/uring/requestQueue.hpp"
 
 class EchoServer {
     public:
@@ -21,18 +22,18 @@ class EchoServer {
     private:
 	using FileDescriptor = int;
 	void onCompletedAccept(FileDescriptor client_socket_fd);
-	void onCompletedRead(const ReadRequest &completed_request);
-	void onCompletedWrite(const WriteRequest &completed_request);
+	void onCompletedRead(const elio::uring::ReadRequest &completed_request);
+	void onCompletedWrite(const elio::uring::WriteRequest &completed_request);
 	void eventLoop();
 
-	RequestQueue requests;
+	elio::uring::RequestQueue requests;
 
-	using Socket = ServerSocket<TCP>;
+	using Socket = elio::net::ServerSocket<elio::net::TCP>;
 	std::unique_ptr<Socket> listening_socket{};
 
-	AcceptRequest accept_request{};
-	std::unordered_map<FileDescriptor, ReadRequest> active_read_requests{};
-	std::unordered_map<FileDescriptor, WriteRequest> active_write_requests{};
+	elio::uring::AcceptRequest accept_request{};
+	std::unordered_map<FileDescriptor, elio::uring::ReadRequest> active_read_requests{};
+	std::unordered_map<FileDescriptor, elio::uring::WriteRequest> active_write_requests{};
 
 	using Buffer = std::array<std::byte, 1024>;
 	std::unordered_map<FileDescriptor, Buffer> reception_buffers{};
@@ -72,7 +73,7 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 
 	accept_request.listening_socket_fd = listening_socket->raw();
 	status = requests.add(accept_request);
-	if (status == QUEUE_FULL)
+	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
 
 	worker_thread = std::jthread([this]() { eventLoop(); });
@@ -80,6 +81,8 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 
 void EchoServer::eventLoop()
 {
+	using namespace elio::uring;
+
 	while (should_continue) {
 		SubmitStatus submit_status = requests.submit(std::chrono::milliseconds(100));
 
@@ -133,6 +136,7 @@ void EchoServer::eventLoop()
 
 void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
 {
+	using namespace elio::uring;
 	if (active_read_requests.find(client_socket_fd) != active_read_requests.cend()) {
 		std::cout << "Already reading from client socket " << client_socket_fd << "." << std::endl;
 		return;
@@ -152,8 +156,9 @@ void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
 		throw std::runtime_error("Adding read request failed");
 }
 
-void EchoServer::onCompletedRead(const ReadRequest &completed_request)
+void EchoServer::onCompletedRead(const elio::uring::ReadRequest &completed_request)
 {
+	using namespace elio::uring;
 	FileDescriptor client_socket_fd = completed_request.fd;
 
 	if (active_write_requests.find(client_socket_fd) != active_write_requests.cend()) {
@@ -173,7 +178,7 @@ void EchoServer::onCompletedRead(const ReadRequest &completed_request)
 		throw std::runtime_error("Adding write request failed");
 }
 
-void EchoServer::onCompletedWrite(const WriteRequest &completed_request)
+void EchoServer::onCompletedWrite(const elio::uring::WriteRequest &completed_request)
 {
 	const size_t erased_count = active_write_requests.erase(completed_request.fd);
 	assert(erased_count);
