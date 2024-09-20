@@ -9,13 +9,10 @@
 #include <thread>
 #include <vector>
 
+#include "elio/eventLoop.hpp"
 #include "elio/net/socket.hpp"
-#include "elio/uring/request.hpp"
-#include "elio/uring/requestQueue.hpp"
-
 class EchoClient {
     public:
-	EchoClient();
 	~EchoClient();
 
 	void connect(std::string_view server_address, uint16_t server_port);
@@ -28,16 +25,15 @@ class EchoClient {
 	void stop();
 
     private:
-	void eventLoop();
 	void onCompletedConnect();
 	void onCompletedRead(const elio::uring::ReadRequest &completed_request);
 	void onCompletedWrite(const elio::uring::WriteRequest &completed_request);
 	void addPendingWriteRequests();
 
-	elio::uring::RequestQueue requests;
-	std::array<std::byte, 2048> reception_buffer{};
+	elio::EventLoop loop{ 3 };
+	elio::Subscriber subscriber{};
 	std::jthread worker_thread{};
-	std::atomic_bool should_continue = true;
+	std::array<std::byte, 2048> reception_buffer{};
 
 	elio::uring::ConnectRequest connect_request{};
 	elio::uring::ReadRequest read_request{};
@@ -51,10 +47,6 @@ class EchoClient {
 	std::condition_variable connection_cv{};
 };
 
-EchoClient::EchoClient() : requests(3)
-{
-}
-
 EchoClient::~EchoClient()
 {
 	stop();
@@ -66,9 +58,10 @@ EchoClient::SendStatus EchoClient::send(std::string &&message)
 		return DISCONNECTED;
 
 	elio::uring::WriteRequest request;
-	request.fd = socket->raw();
+	request.data.fd = socket->raw();
 	std::span<std::byte> as_bytes{ reinterpret_cast<std::byte *>(message.data()), message.size() };
-	request.bytes_written = { std::make_move_iterator(as_bytes.begin()), std::make_move_iterator(as_bytes.end()) };
+	request.data.bytes_written = { std::make_move_iterator(as_bytes.begin()),
+				       std::make_move_iterator(as_bytes.end()) };
 	{
 		std::lock_guard lock(write_requests_mutex);
 		write_requests.push_back(request);
@@ -78,20 +71,20 @@ EchoClient::SendStatus EchoClient::send(std::string &&message)
 
 void EchoClient::stop()
 {
-	should_continue = false;
+	loop.stop();
 }
 
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	socket = std::make_unique<Socket>(server_address, server_port);
 
-	connect_request.socket_fd = socket->raw();
-	std::tie(connect_request.addr, connect_request.addrlen) = socket->getSockAddr();
-	auto status = requests.add(connect_request);
+	connect_request.data.socket_fd = socket->raw();
+	std::tie(connect_request.data.addr, connect_request.data.addrlen) = socket->getSockAddr();
+	auto status = loop.requests.add(connect_request);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error connecting: IO queue full");
 
-	worker_thread = std::jthread([this]() { eventLoop(); });
+	worker_thread = std::jthread([this]() { loop.run(); });
 }
 
 inline bool EchoClient::isConnected() const
@@ -108,9 +101,9 @@ inline void EchoClient::waitForConnection()
 
 void EchoClient::onCompletedConnect()
 {
-	read_request.fd = socket->raw();
-	read_request.bytes_read = reception_buffer;
-	elio::uring::AddRequestStatus status = requests.add(read_request);
+	read_request.data.fd = socket->raw();
+	read_request.data.bytes_read = reception_buffer;
+	elio::uring::AddRequestStatus status = loop.requests.add(read_request);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error reading: IO queue full");
 
@@ -125,14 +118,14 @@ void EchoClient::onCompletedConnect()
 
 void EchoClient::onCompletedRead(const elio::uring::ReadRequest &completed_request)
 {
-	std::cout << "Client: Received \"" << reinterpret_cast<char *>(completed_request.bytes_read.data()) << "\""
+	std::cout << "Client: Received \"" << reinterpret_cast<char *>(completed_request.data.bytes_read.data()) << "\""
 		  << std::endl;
 }
 
 void EchoClient::onCompletedWrite(const elio::uring::WriteRequest &completed_request)
 {
-	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(completed_request.bytes_written.data()) << "\""
-		  << std::endl;
+	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(completed_request.data.bytes_written.data())
+		  << "\"" << std::endl;
 	write_requests.clear();
 }
 
@@ -144,61 +137,6 @@ void EchoClient::addPendingWriteRequests()
 			return;
 
 		for (const elio::uring::WriteRequest &request : write_requests)
-			requests.add(request);
-	}
-}
-
-void EchoClient::eventLoop()
-{
-	using namespace elio::uring;
-
-	while (should_continue) {
-		addPendingWriteRequests();
-		SubmitStatus submit_status = requests.submit(std::chrono::milliseconds(100));
-
-		if (requests.shouldContinueSubmitting(submit_status))
-			continue;
-		else if (submit_status < 0) {
-			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
-			continue;
-		}
-
-		requests.forEachCompletion([&](Completion cqe) {
-			Operation op = getOperation(cqe);
-			switch (op) {
-			case Operation::CONNECT: {
-				int connect_status = cqe->res;
-				if (connect_status < 0) {
-					std::cerr << "Client: Error connecting: " << strerror(-connect_status)
-						  << std::endl;
-					break;
-				}
-				onCompletedConnect();
-			} break;
-			case Operation::READ: {
-				int read_status = cqe->res;
-				if (read_status < 0) {
-					std::cerr << "Client: Error reading: " << strerror(-read_status) << std::endl;
-					break;
-				}
-				ReadRequest completed_request;
-				memcpy(&completed_request, io_uring_cqe_get_data(cqe), sizeof(completed_request));
-				onCompletedRead(completed_request);
-			} break;
-			case Operation::WRITE: {
-				int write_status = cqe->res;
-				if (write_status < 0) {
-					std::cerr << "Client: Error writing: " << strerror(-write_status) << std::endl;
-					break;
-				}
-				WriteRequest completed_request =
-					*reinterpret_cast<WriteRequest *>(io_uring_cqe_get_data(cqe));
-				onCompletedWrite(completed_request);
-			} break;
-			default:
-				std::cerr << "Client: Invalid operation (" << static_cast<uint32_t>(op) << std::endl;
-				break;
-			}
-		});
+			loop.requests.add(request);
 	}
 }

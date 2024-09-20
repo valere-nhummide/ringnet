@@ -24,9 +24,9 @@ class EchoServer {
 	void onCompletedAccept(FileDescriptor client_socket_fd);
 	void onCompletedRead(const elio::uring::ReadRequest &completed_request);
 	void onCompletedWrite(const elio::uring::WriteRequest &completed_request);
-	void eventLoop();
 
-	elio::uring::RequestQueue requests;
+	elio::EventLoop loop;
+	elio::Subscriber subscriber{};
 
 	using Socket = elio::net::ServerSocket<elio::net::TCP>;
 	std::unique_ptr<Socket> listening_socket{};
@@ -40,11 +40,10 @@ class EchoServer {
 
 	size_t max_clients_count;
 	std::jthread worker_thread{};
-	std::atomic_bool should_continue = true;
 };
 
 EchoServer::EchoServer(size_t max_clients_count_)
-	: requests(1 + 2 * max_clients_count_), max_clients_count(max_clients_count_)
+	: loop(1 + 2 * max_clients_count_), max_clients_count(max_clients_count_)
 {
 }
 
@@ -55,7 +54,7 @@ EchoServer::~EchoServer()
 
 void EchoServer::stop()
 {
-	should_continue = false;
+	loop.stop();
 }
 
 void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
@@ -71,67 +70,12 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 		throw std::runtime_error("Error listening to " + std::string(listening_address) + ":" +
 					 std::to_string(listening_port) + ": " + std::string(strerror(errno)));
 
-	accept_request.listening_socket_fd = listening_socket->raw();
-	status = requests.add(accept_request);
+	accept_request.data.listening_socket_fd = listening_socket->raw();
+	status = loop.requests.add(accept_request);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
 
-	worker_thread = std::jthread([this]() { eventLoop(); });
-}
-
-void EchoServer::eventLoop()
-{
-	using namespace elio::uring;
-
-	while (should_continue) {
-		SubmitStatus submit_status = requests.submit(std::chrono::milliseconds(100));
-
-		if (requests.shouldContinueSubmitting(submit_status))
-			continue;
-		else if (submit_status < 0) {
-			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
-			continue;
-		}
-		requests.forEachCompletion([this](Completion cqe) {
-			const Operation op = getOperation(cqe);
-			switch (op) {
-			case Operation::ACCEPT: {
-				int client_socket_fd = cqe->res;
-				if (client_socket_fd < 0) {
-					std::cerr << "Server: Error accepting: " << strerror(-client_socket_fd)
-						  << std::endl;
-					/// @todo : Check if the request should be renewed
-					return;
-				}
-				onCompletedAccept(client_socket_fd);
-			} break;
-			case Operation::READ: {
-				int read_status = cqe->res;
-				if (read_status == -1) {
-					std::cerr << "Server: Error reading: " << strerror(-read_status) << std::endl;
-					break;
-				}
-				ReadRequest completed_request;
-				memcpy(&completed_request, io_uring_cqe_get_data(cqe), sizeof(completed_request));
-
-				onCompletedRead(completed_request);
-			} break;
-			case Operation::WRITE: {
-				int write_status = cqe->res;
-				if (write_status == -1) {
-					std::cerr << "Server: Error writing: " << strerror(-write_status) << std::endl;
-					break;
-				}
-				WriteRequest completed_request =
-					*reinterpret_cast<WriteRequest *>(io_uring_cqe_get_data(cqe));
-				onCompletedWrite(completed_request);
-			} break;
-			default:
-				std::cerr << "Server: Invalid operation (" << static_cast<uint32_t>(op) << std::endl;
-				break;
-			}
-		});
-	}
+	worker_thread = std::jthread([this]() { loop.run(); });
 }
 
 void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
@@ -146,11 +90,11 @@ void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
 	assert(was_inserted);
 
 	ReadRequest new_request;
-	new_request.fd = client_socket_fd;
-	new_request.bytes_read = buffer_iter->second;
+	new_request.data.fd = client_socket_fd;
+	new_request.data.bytes_read = buffer_iter->second;
 
 	const auto [request_iter, _] = active_read_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = requests.add(request_iter->second);
+	AddRequestStatus status = loop.requests.add(request_iter->second);
 
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding read request failed");
@@ -159,7 +103,7 @@ void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
 void EchoServer::onCompletedRead(const elio::uring::ReadRequest &completed_request)
 {
 	using namespace elio::uring;
-	FileDescriptor client_socket_fd = completed_request.fd;
+	FileDescriptor client_socket_fd = completed_request.data.fd;
 
 	if (active_write_requests.find(client_socket_fd) != active_write_requests.cend()) {
 		std::cout << "Already writing to client socket " << client_socket_fd << "." << std::endl;
@@ -167,12 +111,12 @@ void EchoServer::onCompletedRead(const elio::uring::ReadRequest &completed_reque
 	}
 
 	WriteRequest new_request;
-	new_request.fd = completed_request.fd;
-	new_request.bytes_written = { std::make_move_iterator(completed_request.bytes_read.begin()),
-				      std::make_move_iterator(completed_request.bytes_read.end()) };
+	new_request.data.fd = completed_request.data.fd;
+	new_request.data.bytes_written = { std::make_move_iterator(completed_request.data.bytes_read.begin()),
+					   std::make_move_iterator(completed_request.data.bytes_read.end()) };
 
 	const auto [request_iter, _] = active_write_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = requests.add(request_iter->second);
+	AddRequestStatus status = loop.requests.add(request_iter->second);
 
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding write request failed");
@@ -180,6 +124,6 @@ void EchoServer::onCompletedRead(const elio::uring::ReadRequest &completed_reque
 
 void EchoServer::onCompletedWrite(const elio::uring::WriteRequest &completed_request)
 {
-	const size_t erased_count = active_write_requests.erase(completed_request.fd);
+	const size_t erased_count = active_write_requests.erase(completed_request.data.fd);
 	assert(erased_count);
 }

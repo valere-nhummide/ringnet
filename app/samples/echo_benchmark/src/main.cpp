@@ -5,6 +5,9 @@
 #include "client.hpp"
 #include "server.hpp"
 
+// tmp
+#include "elio/eventLoop.hpp"
+
 using namespace std::chrono_literals;
 
 int main(int, char *[])
@@ -19,4 +22,7 @@ int main(int, char *[])
 	client.send("Hello from client!");
 
 	std::this_thread::sleep_for(1s);
+
+	elio::EventLoop loop(1024);
+	loop.run();
 }

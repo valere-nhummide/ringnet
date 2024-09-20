@@ -7,40 +7,45 @@
 
 #include <liburing.h>
 
+#include "elio/operation.hpp"
+
 namespace elio::uring
 {
-enum class Operation : uint8_t { ACCEPT, CONNECT, READ, WRITE };
-
-inline Operation getOperation(const io_uring_cqe *cqe)
-{
+struct RequestHeader {
+	explicit RequestHeader(Operation op_) : op(op_) {};
+	explicit RequestHeader() : op(Operation::ACCEPT) {};
 	Operation op;
-	std::memcpy(&op, io_uring_cqe_get_data(cqe), sizeof(op));
-	return op;
-}
-
-template <Operation OP>
-struct Request {
-    private:
-	Operation op = OP;
+	void *user_data = nullptr;
 };
 
-struct AcceptRequest : Request<Operation::ACCEPT> {
-	int listening_socket_fd = -1;
+struct AcceptRequest {
+	RequestHeader header{ Operation::ACCEPT };
+	struct Data {
+		int listening_socket_fd = -1;
+	} data{};
 };
 
-struct ConnectRequest : Request<Operation::CONNECT> {
-	int socket_fd = -1;
-	const sockaddr *addr = nullptr;
-	socklen_t addrlen = 0;
+struct ConnectRequest {
+	RequestHeader header{ Operation::CONNECT };
+	struct Data {
+		int socket_fd = -1;
+		const sockaddr *addr = nullptr;
+		socklen_t addrlen = 0;
+	} data{};
 };
 
-struct ReadRequest : Request<Operation::READ> {
-	int fd = -1;
-	std::span<std::byte> bytes_read{};
+struct ReadRequest {
+	RequestHeader header{ Operation::READ };
+	struct Data {
+		int fd = -1;
+		std::span<std::byte> bytes_read{};
+	} data{};
 };
-
-struct WriteRequest : Request<Operation::WRITE> {
-	int fd = -1;
-	std::vector<std::byte> bytes_written{};
+struct WriteRequest {
+	RequestHeader header{ Operation::WRITE };
+	struct Data {
+		int fd = -1;
+		std::vector<std::byte> bytes_written{};
+	} data{};
 };
-}
+} // namespace elio::uring
