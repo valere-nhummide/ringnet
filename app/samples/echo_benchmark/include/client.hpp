@@ -13,6 +13,7 @@
 #include "elio/net/socket.hpp"
 class EchoClient {
     public:
+	EchoClient();
 	~EchoClient();
 
 	void connect(std::string_view server_address, uint16_t server_port);
@@ -25,9 +26,10 @@ class EchoClient {
 	void stop();
 
     private:
-	void onCompletedConnect();
-	void onCompletedRead(const elio::uring::ReadRequest &completed_request);
-	void onCompletedWrite(const elio::uring::WriteRequest &completed_request);
+	void registerCallbacks();
+	void onCompletedConnect(elio::net::FileDescriptor fd);
+	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
+	void onCompletedWrite(elio::net::FileDescriptor fd, std::vector<std::byte> &bytes_written);
 	void addPendingWriteRequests();
 
 	elio::EventLoop loop{ 3 };
@@ -46,6 +48,11 @@ class EchoClient {
 	std::mutex connection_mutex{};
 	std::condition_variable connection_cv{};
 };
+
+EchoClient::EchoClient()
+{
+	registerCallbacks();
+}
 
 EchoClient::~EchoClient()
 {
@@ -99,8 +106,24 @@ inline void EchoClient::waitForConnection()
 		connection_cv.wait(lock, [this]() { return isConnected(); });
 }
 
-void EchoClient::onCompletedConnect()
+void EchoClient::registerCallbacks()
 {
+	subscriber.on<elio::uring::ConnectRequest::Data>(
+		[this](elio::uring::ConnectRequest::Data &&data) { onCompletedConnect(data.socket_fd); });
+
+	subscriber.on<elio::uring::ReadRequest::Data>([this](elio::uring::ReadRequest::Data &&data) {
+		onCompletedRead(data.fd, std::move(data.bytes_read));
+	});
+
+	subscriber.on<elio::uring::WriteRequest::Data>(
+		[this](elio::uring::WriteRequest::Data &&data) { onCompletedWrite(data.fd, data.bytes_written); });
+}
+
+void EchoClient::onCompletedConnect(elio::net::FileDescriptor fd)
+{
+	if (fd != socket->raw())
+		throw std::runtime_error("Error connecting: Unexpected file descriptor");
+
 	read_request.data.fd = socket->raw();
 	read_request.data.bytes_read = reception_buffer;
 	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
@@ -116,16 +139,14 @@ void EchoClient::onCompletedConnect()
 	std::cout << "Client: Connected to server (socket " << socket->raw() << ")\n";
 }
 
-void EchoClient::onCompletedRead(const elio::uring::ReadRequest &completed_request)
+void EchoClient::onCompletedRead(elio::net::FileDescriptor, std::span<std::byte> bytes_read)
 {
-	std::cout << "Client: Received \"" << reinterpret_cast<char *>(completed_request.data.bytes_read.data()) << "\""
-		  << std::endl;
+	std::cout << "Client: Received \"" << reinterpret_cast<char *>(bytes_read.data()) << "\"" << std::endl;
 }
 
-void EchoClient::onCompletedWrite(const elio::uring::WriteRequest &completed_request)
+void EchoClient::onCompletedWrite(elio::net::FileDescriptor, std::vector<std::byte> &bytes_written)
 {
-	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(completed_request.data.bytes_written.data())
-		  << "\"" << std::endl;
+	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(bytes_written.data()) << "\"" << std::endl;
 	write_requests.clear();
 }
 

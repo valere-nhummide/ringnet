@@ -16,6 +16,8 @@
 
 namespace elio::net
 {
+using FileDescriptor = int;
+
 enum IPVersion : decltype(AF_UNSPEC) { UNKNOWN = AF_UNSPEC, IPv4 = AF_INET, IPv6 = AF_INET6 };
 
 enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOCK_DGRAM, TCP = SOCK_STREAM };
@@ -42,7 +44,7 @@ class BaseSocket {
 		fd = -1;
 	}
 
-	inline int raw() const
+	inline FileDescriptor raw() const
 	{
 		return fd;
 	}
@@ -91,7 +93,7 @@ class BaseSocket {
 	}
 
     protected:
-	int fd = -1;
+	FileDescriptor fd = -1;
 
     private:
 	address_t address{};
