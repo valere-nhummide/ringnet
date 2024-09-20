@@ -15,10 +15,17 @@ class EventLoop {
 	void run();
 	void stop();
 
-	/// @todo Make this private once the API allows to add requests
-	elio::uring::RequestQueue requests;
+	/// @brief Add a request to the queue. The associated subscriber will be notified once the request is completed.
+	/// @tparam Request Type of the request
+	/// @param request Content of the request
+	/// @param subscriber Notified subscriber
+	/// @return Cf. enumerate
+	/// @warning The duration of both the request and the subscriber must outlive the completion.
+	template <class Request>
+	uring::AddRequestStatus add(Request &request, Subscriber &subscriber);
 
     private:
+	elio::uring::RequestQueue requests;
 	std::atomic_bool should_continue{ true };
 
 	using Event = const io_uring_cqe *;
@@ -127,4 +134,12 @@ void EventLoop::stop()
 {
 	should_continue = false;
 }
+
+template <class Request>
+uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
+{
+	request.header.user_data = static_cast<void *>(&subscriber);
+	return requests.add(request);
+}
+
 } // namespace elio

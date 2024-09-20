@@ -80,7 +80,7 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 
 	connect_request.data.socket_fd = socket->raw();
 	std::tie(connect_request.data.addr, connect_request.data.addrlen) = socket->getSockAddr();
-	auto status = loop.requests.add(connect_request);
+	auto status = loop.add(connect_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error connecting: IO queue full");
 
@@ -103,7 +103,7 @@ void EchoClient::onCompletedConnect()
 {
 	read_request.data.fd = socket->raw();
 	read_request.data.bytes_read = reception_buffer;
-	elio::uring::AddRequestStatus status = loop.requests.add(read_request);
+	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error reading: IO queue full");
 
@@ -136,7 +136,7 @@ void EchoClient::addPendingWriteRequests()
 		if (write_requests.empty())
 			return;
 
-		for (const elio::uring::WriteRequest &request : write_requests)
-			loop.requests.add(request);
+		for (elio::uring::WriteRequest &request : write_requests)
+			loop.add(request, subscriber);
 	}
 }

@@ -71,7 +71,7 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 					 std::to_string(listening_port) + ": " + std::string(strerror(errno)));
 
 	accept_request.data.listening_socket_fd = listening_socket->raw();
-	status = loop.requests.add(accept_request);
+	status = loop.add(accept_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
 
@@ -94,7 +94,7 @@ void EchoServer::onCompletedAccept(FileDescriptor client_socket_fd)
 	new_request.data.bytes_read = buffer_iter->second;
 
 	const auto [request_iter, _] = active_read_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = loop.requests.add(request_iter->second);
+	AddRequestStatus status = loop.add(request_iter->second, subscriber);
 
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding read request failed");
@@ -116,7 +116,7 @@ void EchoServer::onCompletedRead(const elio::uring::ReadRequest &completed_reque
 					   std::make_move_iterator(completed_request.data.bytes_read.end()) };
 
 	const auto [request_iter, _] = active_write_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = loop.requests.add(request_iter->second);
+	AddRequestStatus status = loop.add(request_iter->second, subscriber);
 
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding write request failed");
