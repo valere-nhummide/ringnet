@@ -3,37 +3,37 @@
 #include <functional>
 #include <tuple>
 
-#include "elio/operation.hpp"
-#include "elio/uring/request.hpp"
+/// @todo Should be removed, and use variadic template
+#include "elio/events.hpp"
 
 namespace elio
 {
 class Subscriber {
     public:
-	template <class EventData>
-	using Callback = std::function<void(EventData &&)>;
+	template <class Event>
+	using Callback = std::function<void(Event &&)>;
 
 	/// @todo Make this a variadic template
-	std::tuple<Callback<uring::AcceptRequest::Data>, Callback<uring::ReadRequest::Data>,
-		   Callback<uring::WriteRequest::Data>, Callback<uring::ConnectRequest::Data>>
+	std::tuple<Callback<events::ErrorEvent>, Callback<events::AcceptEvent>, Callback<events::ReadEvent>,
+		   Callback<events::WriteEvent>, Callback<events::ConnectEvent>>
 		handlers;
 
-	template <class EventData>
-	auto handle(EventData &&data) noexcept
+	template <class Event>
+	auto handle(Event &&data) noexcept
 	{
-		return handler<EventData>()(std::move(data));
+		return handler<Event>()(std::move(data));
 	}
 
-	template <class EventData>
-	Callback<EventData> &handler() noexcept
+	template <class Event>
+	Callback<Event> &handler() noexcept
 	{
-		return std::get<Callback<EventData>>(handlers);
+		return std::get<Callback<Event>>(handlers);
 	}
 
-	template <typename EventData>
-	void on(Callback<EventData> f)
+	template <typename Event>
+	void on(Callback<Event> f)
 	{
-		handler<EventData>() = std::move(f);
+		handler<Event>() = std::move(f);
 	}
 };
 } // namespace elio

@@ -13,7 +13,7 @@
 
 class EchoServer {
     public:
-	EchoServer(size_t max_clients_count = 10);
+	EchoServer(elio::EventLoop &loop_, size_t max_clients_count = 10);
 	~EchoServer();
 
 	void listen(std::string_view listening_address, uint16_t listening_port);
@@ -23,9 +23,9 @@ class EchoServer {
 	void registerCallbacks();
 	void onCompletedAccept(elio::net::FileDescriptor client_socket_fd);
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
-	void onCompletedWrite(elio::net::FileDescriptor fd, std::vector<std::byte> &bytes_written);
+	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
 
-	elio::EventLoop loop;
+	elio::EventLoop &loop;
 	elio::Subscriber subscriber{};
 
 	using Socket = elio::net::ServerSocket<elio::net::TCP>;
@@ -39,11 +39,10 @@ class EchoServer {
 	std::unordered_map<elio::net::FileDescriptor, Buffer> reception_buffers{};
 
 	size_t max_clients_count;
-	std::jthread worker_thread{};
 };
 
-EchoServer::EchoServer(size_t max_clients_count_)
-	: loop(1 + 2 * max_clients_count_), max_clients_count(max_clients_count_)
+EchoServer::EchoServer(elio::EventLoop &loop_, size_t max_clients_count_)
+	: loop(loop_), max_clients_count(max_clients_count_)
 {
 	registerCallbacks();
 }
@@ -76,20 +75,20 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
 
-	worker_thread = std::jthread([this]() { loop.run(); });
+	std::cout << "Server: Listening to " << listening_address << ":" << listening_port << " (socket "
+		  << listening_socket->raw() << ")..." << std::endl;
 }
 
 void EchoServer::registerCallbacks()
 {
-	subscriber.on<elio::uring::AcceptRequest::Data>(
-		[this](elio::uring::AcceptRequest::Data &&data) { onCompletedAccept(data.listening_socket_fd); });
+	subscriber.on<elio::events::AcceptEvent>(
+		[this](elio::events::AcceptEvent &&event) { onCompletedAccept(event.client_fd); });
 
-	subscriber.on<elio::uring::ReadRequest::Data>([this](elio::uring::ReadRequest::Data &&data) {
-		onCompletedRead(data.fd, std::move(data.bytes_read));
-	});
+	subscriber.on<elio::events::ReadEvent>(
+		[this](elio::events::ReadEvent &&event) { onCompletedRead(event.fd, std::move(event.bytes_read)); });
 
-	subscriber.on<elio::uring::WriteRequest::Data>(
-		[this](elio::uring::WriteRequest::Data &&data) { onCompletedWrite(data.fd, data.bytes_written); });
+	subscriber.on<elio::events::WriteEvent>(
+		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
 }
 
 void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
@@ -99,6 +98,8 @@ void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
 		std::cout << "Already reading from client socket " << client_socket_fd << "." << std::endl;
 		return;
 	}
+
+	std::cout << "Server: Received client connection request (socket " << client_socket_fd << ")." << std::endl;
 
 	const auto [buffer_iter, was_inserted] = reception_buffers.emplace(std::make_pair(client_socket_fd, Buffer{}));
 	assert(was_inserted);
@@ -135,7 +136,7 @@ void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::by
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding write request failed");
 }
-void EchoServer::onCompletedWrite(elio::net::FileDescriptor fd, std::vector<std::byte> &)
+void EchoServer::onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &)
 {
 	const size_t erased_count = active_write_requests.erase(fd);
 	assert(erased_count);

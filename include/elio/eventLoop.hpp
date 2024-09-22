@@ -1,9 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <cassert>
 
-#include "subscriber.hpp"
-#include "uring/requestQueue.hpp"
+#include "elio/events.hpp"
+#include "elio/subscriber.hpp"
+#include "elio/uring/requestQueue.hpp"
 
 namespace elio
 {
@@ -28,9 +30,14 @@ class EventLoop {
 	elio::uring::RequestQueue requests;
 	std::atomic_bool should_continue{ true };
 
-	using Event = const io_uring_cqe *;
-	inline static uring::RequestHeader getIssuingRequest(Event event);
-	inline static Subscriber *getAssociatedSubscriber(uring::RequestHeader header);
+	using Completion = const io_uring_cqe *;
+
+	inline static uring::RequestHeader getIssuingRequestHeader(Completion cqe);
+
+	template <class Request>
+	inline static const Request *getIssuingRequest(Completion cqe);
+
+	inline static Subscriber *getAssociatedSubscriber(const uring::RequestHeader &header);
 };
 
 EventLoop::EventLoop(size_t request_queue_size) : requests(request_queue_size)
@@ -50,77 +57,68 @@ void EventLoop::run()
 			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
 			continue;
 		}
-		requests.forEachCompletion([this](Event event) {
-			uring::RequestHeader request = getIssuingRequest(event);
-			switch (request.op) {
-			case Operation::ACCEPT: {
-				if (event->res < 0) {
-					std::cerr << "Error accepting: " << strerror(-(event->res)) << std::endl;
-					/// @todo : Check if the request should be renewed
-					return;
-				}
-				Subscriber *subscriber = getAssociatedSubscriber(request);
-				AcceptRequest::Data *request_data =
-					&(reinterpret_cast<AcceptRequest *>(io_uring_cqe_get_data(event))->data);
 
-				if (subscriber)
-					subscriber->handle(std::move(*request_data));
+		requests.forEachCompletion([](Completion cqe) {
+			if (!cqe->user_data) {
+				std::cerr << "Error: Malformed completion queue entry" << std::endl;
+				return;
+			}
+			uring::RequestHeader *header = reinterpret_cast<uring::RequestHeader *>(cqe->user_data);
+			Subscriber *subscriber = getAssociatedSubscriber(*header);
+
+			if (!subscriber) {
+				std::cerr << "Error: No subscriber" << std::endl;
+				return;
+			}
+
+			if (cqe->res < 0) {
+				/// @todo Move to user handler
+				std::cerr << "Error: " << strerror(-(cqe->res)) << std::endl;
+				subscriber->handle(events::ErrorEvent{ .error_code = -(cqe->res) });
+				return;
+			}
+
+			switch (header->op) {
+			case Operation::ACCEPT: {
+				subscriber->handle(events::AcceptEvent{ .client_fd = cqe->res });
 			} break;
 			case Operation::READ: {
-				if (event->res < 0) {
-					std::cerr << "Error reading: " << strerror(-(event->res)) << std::endl;
-					/// @todo : Check if the request should be renewed
-					return;
-				}
-				Subscriber *subscriber = getAssociatedSubscriber(request);
-				ReadRequest::Data *request_data =
-					&(reinterpret_cast<ReadRequest *>(io_uring_cqe_get_data(event))->data);
-
-				if (subscriber)
-					subscriber->handle(std::move(*request_data));
+				auto request = getIssuingRequest<uring::ReadRequest>(cqe);
+				assert(request->data.fd == cqe->res);
+				subscriber->handle(
+					events::ReadEvent{ .fd = cqe->res, .bytes_read = request->data.bytes_read });
 			} break;
 			case Operation::WRITE: {
-				if (event->res < 0) {
-					std::cerr << "Error writing: " << strerror(-(event->res)) << std::endl;
-					/// @todo : Check if the request should be renewed
-					return;
-				}
-				Subscriber *subscriber = getAssociatedSubscriber(request);
-				WriteRequest::Data *request_data =
-					&(reinterpret_cast<WriteRequest *>(io_uring_cqe_get_data(event))->data);
-
-				if (subscriber)
-					subscriber->handle(std::move(*request_data));
+				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
+				assert(request->data.fd == cqe->res);
+				subscriber->handle(
+					events::WriteEvent{ .fd = cqe->res, .bytes_written = { /* to fill */ } });
 			} break;
 			case Operation::CONNECT: {
-				if (event->res < 0) {
-					std::cerr << "Error connecting: " << strerror(-(event->res)) << std::endl;
-					/// @todo : Check if the request should be renewed
-					return;
-				}
-				Subscriber *subscriber = getAssociatedSubscriber(request);
-				ConnectRequest::Data *request_data =
-					&(reinterpret_cast<ConnectRequest *>(io_uring_cqe_get_data(event))->data);
-
-				if (subscriber)
-					subscriber->handle(std::move(*request_data));
+				subscriber->handle(events::ConnectEvent{ .socket_fd = cqe->res });
 			} break;
 			default:
-				std::cerr << "Invalid operation (" << static_cast<uint32_t>(request.op) << std::endl;
+				std::cerr << "Error: Malformed completion queue entry" << std::endl;
 				break;
 			}
 		});
 	}
 }
 
-inline uring::RequestHeader EventLoop::getIssuingRequest(Event event)
+inline uring::RequestHeader EventLoop::getIssuingRequestHeader(Completion cqe)
 {
 	uring::RequestHeader request;
-	std::memcpy(&request, io_uring_cqe_get_data(event), sizeof(request));
+	std::memcpy(&request, io_uring_cqe_get_data(cqe), sizeof(request));
 	return request;
 }
 
-inline Subscriber *EventLoop::getAssociatedSubscriber(uring::RequestHeader header)
+template <class Request>
+inline const Request *EventLoop::getIssuingRequest(Completion cqe)
+{
+	return reinterpret_cast<Request *>(cqe->user_data);
+}
+
+inline Subscriber *EventLoop::getAssociatedSubscriber(const uring::RequestHeader &header)
 {
 	return static_cast<Subscriber *>(header.user_data);
 }

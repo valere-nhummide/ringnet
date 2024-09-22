@@ -11,9 +11,11 @@
 
 #include "elio/eventLoop.hpp"
 #include "elio/net/socket.hpp"
+#include "elio/uring/request.hpp"
+
 class EchoClient {
     public:
-	EchoClient();
+	EchoClient(elio::EventLoop &loop);
 	~EchoClient();
 
 	void connect(std::string_view server_address, uint16_t server_port);
@@ -29,12 +31,11 @@ class EchoClient {
 	void registerCallbacks();
 	void onCompletedConnect(elio::net::FileDescriptor fd);
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
-	void onCompletedWrite(elio::net::FileDescriptor fd, std::vector<std::byte> &bytes_written);
+	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
 	void addPendingWriteRequests();
 
-	elio::EventLoop loop{ 3 };
+	elio::EventLoop &loop;
 	elio::Subscriber subscriber{};
-	std::jthread worker_thread{};
 	std::array<std::byte, 2048> reception_buffer{};
 
 	elio::uring::ConnectRequest connect_request{};
@@ -49,7 +50,7 @@ class EchoClient {
 	std::condition_variable connection_cv{};
 };
 
-EchoClient::EchoClient()
+EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_)
 {
 	registerCallbacks();
 }
@@ -83,6 +84,7 @@ void EchoClient::stop()
 
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
+	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
 	socket = std::make_unique<Socket>(server_address, server_port);
 
 	connect_request.data.socket_fd = socket->raw();
@@ -90,8 +92,6 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 	auto status = loop.add(connect_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error connecting: IO queue full");
-
-	worker_thread = std::jthread([this]() { loop.run(); });
 }
 
 inline bool EchoClient::isConnected() const
@@ -108,15 +108,14 @@ inline void EchoClient::waitForConnection()
 
 void EchoClient::registerCallbacks()
 {
-	subscriber.on<elio::uring::ConnectRequest::Data>(
-		[this](elio::uring::ConnectRequest::Data &&data) { onCompletedConnect(data.socket_fd); });
+	subscriber.on<elio::events::ConnectEvent>(
+		[this](elio::events::ConnectEvent &&event) { onCompletedConnect(event.socket_fd); });
 
-	subscriber.on<elio::uring::ReadRequest::Data>([this](elio::uring::ReadRequest::Data &&data) {
-		onCompletedRead(data.fd, std::move(data.bytes_read));
-	});
+	subscriber.on<elio::events::ReadEvent>(
+		[this](elio::events::ReadEvent &&event) { onCompletedRead(event.fd, std::move(event.bytes_read)); });
 
-	subscriber.on<elio::uring::WriteRequest::Data>(
-		[this](elio::uring::WriteRequest::Data &&data) { onCompletedWrite(data.fd, data.bytes_written); });
+	subscriber.on<elio::events::WriteEvent>(
+		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
 }
 
 void EchoClient::onCompletedConnect(elio::net::FileDescriptor fd)
@@ -144,7 +143,7 @@ void EchoClient::onCompletedRead(elio::net::FileDescriptor, std::span<std::byte>
 	std::cout << "Client: Received \"" << reinterpret_cast<char *>(bytes_read.data()) << "\"" << std::endl;
 }
 
-void EchoClient::onCompletedWrite(elio::net::FileDescriptor, std::vector<std::byte> &bytes_written)
+void EchoClient::onCompletedWrite(elio::net::FileDescriptor, std::span<std::byte> &bytes_written)
 {
 	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(bytes_written.data()) << "\"" << std::endl;
 	write_requests.clear();

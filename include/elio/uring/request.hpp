@@ -7,10 +7,10 @@
 
 #include <liburing.h>
 
-#include "elio/operation.hpp"
-
 namespace elio::uring
 {
+
+enum class Operation : uint8_t { ACCEPT, CONNECT, READ, WRITE };
 struct RequestHeader {
 	explicit RequestHeader(Operation op_) : op(op_) {};
 	explicit RequestHeader() : op(Operation::ACCEPT) {};
