@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "elio/eventLoop.hpp"
-#include "elio/net/socket.hpp"
+#include "elio/net/tcp/clientSocket.hpp"
 #include "elio/uring/request.hpp"
 
 class EchoClient {
@@ -43,7 +43,7 @@ class EchoClient {
 	std::vector<elio::uring::WriteRequest> write_requests{};
 	std::mutex write_requests_mutex{};
 
-	using Socket = elio::net::ClientSocket<elio::net::TCP>;
+	using Socket = elio::net::tcp::ClientSocket;
 	std::unique_ptr<Socket> socket{};
 	bool is_connected = false;
 	std::mutex connection_mutex{};
@@ -118,10 +118,10 @@ void EchoClient::registerCallbacks()
 		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
 }
 
-void EchoClient::onCompletedConnect(elio::net::FileDescriptor fd)
+void EchoClient::onCompletedConnect(elio::net::FileDescriptor)
 {
-	if (fd != socket->raw())
-		throw std::runtime_error("Error connecting: Unexpected file descriptor");
+	// if (fd != socket->raw())
+	// 	throw std::runtime_error("Error connecting: Unexpected file descriptor");
 
 	read_request.data.fd = socket->raw();
 	read_request.data.bytes_read = reception_buffer;

@@ -7,7 +7,7 @@
 #include <thread>
 #include <unordered_map>
 
-#include "elio/net/socket.hpp"
+#include "elio/net/tcp/serverSocket.hpp"
 #include "elio/uring/request.hpp"
 #include "elio/uring/requestQueue.hpp"
 
@@ -28,7 +28,7 @@ class EchoServer {
 	elio::EventLoop &loop;
 	elio::Subscriber subscriber{};
 
-	using Socket = elio::net::ServerSocket<elio::net::TCP>;
+	using Socket = elio::net::tcp::ServerSocket;
 	std::unique_ptr<Socket> listening_socket{};
 
 	elio::uring::AcceptRequest accept_request{};
