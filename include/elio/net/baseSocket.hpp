@@ -84,8 +84,8 @@ BaseSocket<DP>::ReadStatus BaseSocket<DP>::read(std::span<std::byte> reception_b
 	if (!fd)
 		return ReadStatus::DISCONNECTED;
 
-	read_request.data.fd = fd;
-	read_request.data.bytes_read = reception_buffer;
+	read_request.fd = fd;
+	read_request.bytes_read = reception_buffer;
 	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return ReadStatus::QUEUE_FULL;

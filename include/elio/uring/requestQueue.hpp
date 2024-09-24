@@ -109,7 +109,7 @@ AddRequestStatus RequestQueue::add(const AcceptRequest &request)
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_multishot_accept(sqe, request.data.listening_socket_fd, nullptr, nullptr, 0);
+	io_uring_prep_multishot_accept(sqe, request.listening_socket_fd, nullptr, nullptr, 0);
 	io_uring_sqe_set_data(sqe, (void *)(&request));
 	return OK;
 }
@@ -121,7 +121,7 @@ AddRequestStatus RequestQueue::add(const ConnectRequest &request)
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_connect(sqe, request.data.socket_fd, request.data.addr, request.data.addrlen);
+	io_uring_prep_connect(sqe, request.socket_fd, request.addr, request.addrlen);
 	io_uring_sqe_set_data(sqe, (void *)(&request));
 	return OK;
 }
@@ -133,8 +133,7 @@ AddRequestStatus RequestQueue::add(const WriteRequest &request)
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_write(sqe, request.data.fd, request.data.bytes_written.data(), request.data.bytes_written.size(),
-			    0);
+	io_uring_prep_write(sqe, request.fd, request.bytes_written.data(), request.bytes_written.size(), 0);
 	io_uring_sqe_set_data(sqe, (void *)(&request));
 	return OK;
 }
@@ -146,7 +145,7 @@ AddRequestStatus RequestQueue::add(const ReadRequest &request)
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_read(sqe, request.data.fd, request.data.bytes_read.data(), request.data.bytes_read.size(), 0);
+	io_uring_prep_read(sqe, request.fd, request.bytes_read.data(), request.bytes_read.size(), 0);
 	io_uring_sqe_set_data(sqe, (void *)(&request));
 	return OK;
 }

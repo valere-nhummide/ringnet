@@ -20,32 +20,24 @@ struct RequestHeader {
 
 struct AcceptRequest {
 	RequestHeader header{ Operation::ACCEPT };
-	struct Data {
-		int listening_socket_fd = -1;
-	} data{};
+	int listening_socket_fd = -1;
 };
 
 struct ConnectRequest {
 	RequestHeader header{ Operation::CONNECT };
-	struct Data {
-		int socket_fd = -1;
-		const sockaddr *addr = nullptr;
-		socklen_t addrlen = 0;
-	} data{};
+	int socket_fd = -1;
+	const sockaddr *addr = nullptr;
+	socklen_t addrlen = 0;
 };
 
 struct ReadRequest {
 	RequestHeader header{ Operation::READ };
-	struct Data {
-		int fd = -1;
-		std::span<std::byte> bytes_read{};
-	} data{};
+	int fd = -1;
+	std::span<std::byte> bytes_read{};
 };
 struct WriteRequest {
 	RequestHeader header{ Operation::WRITE };
-	struct Data {
-		int fd = -1;
-		std::vector<std::byte> bytes_written{};
-	} data{};
+	int fd = -1;
+	std::vector<std::byte> bytes_written{};
 };
 } // namespace elio::uring

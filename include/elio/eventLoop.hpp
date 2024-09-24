@@ -84,13 +84,13 @@ void EventLoop::run()
 			} break;
 			case Operation::READ: {
 				auto request = getIssuingRequest<uring::ReadRequest>(cqe);
-				assert(request->data.fd == cqe->res);
+				assert(request->fd == cqe->res);
 				subscriber->handle(
-					events::ReadEvent{ .fd = cqe->res, .bytes_read = request->data.bytes_read });
+					events::ReadEvent{ .fd = cqe->res, .bytes_read = request->bytes_read });
 			} break;
 			case Operation::WRITE: {
 				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
-				assert(request->data.fd == cqe->res);
+				assert(request->fd == cqe->res);
 				subscriber->handle(
 					events::WriteEvent{ .fd = cqe->res, .bytes_written = { /* to fill */ } });
 			} break;

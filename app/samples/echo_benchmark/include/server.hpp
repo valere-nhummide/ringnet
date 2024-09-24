@@ -70,7 +70,7 @@ void EchoServer::listen(std::string_view listening_address, uint16_t listening_p
 		throw std::runtime_error("Error listening to " + std::string(listening_address) + ":" +
 					 std::to_string(listening_port) + ": " + std::string(strerror(errno)));
 
-	accept_request.data.listening_socket_fd = listening_socket->raw();
+	accept_request.listening_socket_fd = listening_socket->raw();
 	status = loop.add(accept_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
@@ -105,8 +105,8 @@ void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
 	assert(was_inserted);
 
 	ReadRequest new_request;
-	new_request.data.fd = client_socket_fd;
-	new_request.data.bytes_read = buffer_iter->second;
+	new_request.fd = client_socket_fd;
+	new_request.bytes_read = buffer_iter->second;
 
 	const auto [request_iter, _] = active_read_requests.emplace(std::make_pair(client_socket_fd, new_request));
 	AddRequestStatus status = loop.add(request_iter->second, subscriber);
@@ -126,8 +126,8 @@ void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::by
 	}
 
 	WriteRequest new_request;
-	new_request.data.fd = fd;
-	new_request.data.bytes_written = { std::make_move_iterator(bytes_read.begin()),
+	new_request.fd = fd;
+	new_request.bytes_written = { std::make_move_iterator(bytes_read.begin()),
 					   std::make_move_iterator(bytes_read.end()) };
 
 	const auto [request_iter, _] = active_write_requests.emplace(std::make_pair(client_socket_fd, new_request));

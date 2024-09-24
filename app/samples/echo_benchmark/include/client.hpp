@@ -65,10 +65,9 @@ EchoClient::SendStatus EchoClient::send(std::string &&message)
 		return DISCONNECTED;
 
 	elio::uring::WriteRequest request;
-	request.data.fd = socket->raw();
+	request.fd = socket->raw();
 	std::span<std::byte> as_bytes{ reinterpret_cast<std::byte *>(message.data()), message.size() };
-	request.data.bytes_written = { std::make_move_iterator(as_bytes.begin()),
-				       std::make_move_iterator(as_bytes.end()) };
+	request.bytes_written = { std::make_move_iterator(as_bytes.begin()), std::make_move_iterator(as_bytes.end()) };
 	{
 		std::lock_guard lock(write_requests_mutex);
 		write_requests.push_back(request);
@@ -86,8 +85,8 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
 	socket = std::make_unique<Socket>(loop, server_address, server_port);
 
-	connect_request.data.socket_fd = socket->raw();
-	std::tie(connect_request.data.addr, connect_request.data.addrlen) = socket->getSockAddr();
+	connect_request.socket_fd = socket->raw();
+	std::tie(connect_request.addr, connect_request.addrlen) = socket->getSockAddr();
 	auto status = loop.add(connect_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error connecting: IO queue full");
