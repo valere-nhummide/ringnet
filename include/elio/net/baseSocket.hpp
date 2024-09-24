@@ -14,6 +14,8 @@
 #include <type_traits>
 #include <variant>
 
+#include "elio/eventLoop.hpp"
+
 namespace elio::net
 {
 using FileDescriptor = int;
@@ -28,9 +30,12 @@ using ResolveResult = std::pair<Address, IPVersion>;
 template <DatagramProtocol DP>
 class BaseSocket {
     public:
-	explicit BaseSocket(std::string_view address_, uint16_t port, bool should_listen);
+	explicit BaseSocket(elio::EventLoop &loop, std::string_view address_, uint16_t port, bool should_listen);
 
 	~BaseSocket();
+
+	enum class ReadStatus { OK, DISCONNECTED, QUEUE_FULL };
+	ReadStatus read(std::span<std::byte> reception_buffer, elio::Subscriber &subscriber);
 
 	inline FileDescriptor raw() const;
 
@@ -42,14 +47,20 @@ class BaseSocket {
 	FileDescriptor fd = -1;
 
     private:
+	elio::EventLoop &loop;
 	Address address{};
 	IPVersion ip_version = UNKNOWN;
+
+	/// @brief The read request is multi-shot, hence only one suffice.
+	/// It should be renewed on errors. 
+	elio::uring::ReadRequest read_request{};
 
 	inline void setOption(int opt, bool enable = true);
 };
 
 template <DatagramProtocol DP>
-BaseSocket<DP>::BaseSocket(std::string_view address_, uint16_t port, bool should_listen)
+BaseSocket<DP>::BaseSocket(elio::EventLoop &loop_, std::string_view address_, uint16_t port, bool should_listen)
+	: loop(loop_)
 {
 	std::tie(address, ip_version) = resolve(address_, port, should_listen);
 	fd = socket(ip_version, DP, 0);
@@ -65,6 +76,21 @@ BaseSocket<DP>::~BaseSocket()
 	if (fd > 0)
 		close(fd);
 	fd = -1;
+}
+
+template <DatagramProtocol DP>
+BaseSocket<DP>::ReadStatus BaseSocket<DP>::read(std::span<std::byte> reception_buffer, elio::Subscriber &subscriber)
+{
+	if (!fd)
+		return ReadStatus::DISCONNECTED;
+
+	read_request.data.fd = fd;
+	read_request.data.bytes_read = reception_buffer;
+	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
+	if (status == elio::uring::QUEUE_FULL)
+		return ReadStatus::QUEUE_FULL;
+
+	return ReadStatus::OK;
 }
 
 template <DatagramProtocol DP>

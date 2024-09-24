@@ -59,7 +59,7 @@ void EchoServer::stop()
 
 void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
 {
-	listening_socket = std::make_unique<Socket>(listening_address, listening_port);
+	listening_socket = std::make_unique<Socket>(loop, listening_address, listening_port);
 	int status = listening_socket->bind();
 	if (status)
 		throw std::runtime_error("Error binding to " + std::string(listening_address) + ":" +

@@ -7,8 +7,8 @@ namespace elio::net::tcp
 
 class ServerSocket : public BaseSocket<DatagramProtocol::TCP> {
     public:
-	explicit ServerSocket(std::string_view address_, uint16_t port)
-		: BaseSocket<DatagramProtocol::TCP>(address_, port, true)
+	explicit ServerSocket(elio::EventLoop &loop_, std::string_view address_, uint16_t port)
+		: BaseSocket<DatagramProtocol::TCP>(loop_, address_, port, true)
 	{
 	}
 

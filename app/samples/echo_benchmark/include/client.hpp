@@ -39,7 +39,6 @@ class EchoClient {
 	std::array<std::byte, 2048> reception_buffer{};
 
 	elio::uring::ConnectRequest connect_request{};
-	elio::uring::ReadRequest read_request{};
 	std::vector<elio::uring::WriteRequest> write_requests{};
 	std::mutex write_requests_mutex{};
 
@@ -85,7 +84,7 @@ void EchoClient::stop()
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
-	socket = std::make_unique<Socket>(server_address, server_port);
+	socket = std::make_unique<Socket>(loop, server_address, server_port);
 
 	connect_request.data.socket_fd = socket->raw();
 	std::tie(connect_request.data.addr, connect_request.data.addrlen) = socket->getSockAddr();
@@ -118,16 +117,12 @@ void EchoClient::registerCallbacks()
 		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
 }
 
-void EchoClient::onCompletedConnect(elio::net::FileDescriptor)
+void EchoClient::onCompletedConnect(elio::net::FileDescriptor fd)
 {
-	// if (fd != socket->raw())
-	// 	throw std::runtime_error("Error connecting: Unexpected file descriptor");
+	if (fd != socket->raw())
+		throw std::runtime_error("Error connecting: Unexpected file descriptor");
 
-	read_request.data.fd = socket->raw();
-	read_request.data.bytes_read = reception_buffer;
-	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
-	if (status == elio::uring::QUEUE_FULL)
-		throw std::runtime_error("Error reading: IO queue full");
+	socket->read(reception_buffer, subscriber);
 
 	{
 		std::lock_guard<std::mutex> lock{ connection_mutex };
