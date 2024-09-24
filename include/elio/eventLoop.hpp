@@ -95,7 +95,7 @@ void EventLoop::run()
 					events::WriteEvent{ .fd = cqe->res, .bytes_written = { /* to fill */ } });
 			} break;
 			case Operation::CONNECT: {
-				subscriber->handle(events::ConnectEvent{ .socket_fd = cqe->res });
+				subscriber->handle(events::ConnectEvent{});
 			} break;
 			default:
 				std::cerr << "Error: Malformed completion queue entry" << std::endl;

@@ -23,9 +23,7 @@ struct AcceptEvent {
 	int client_fd{};
 };
 
-struct ConnectEvent {
-	int socket_fd{};
-};
+struct ConnectEvent {};
 
 struct ReadEvent {
 	int fd{};

@@ -29,7 +29,7 @@ class EchoClient {
 
     private:
 	void registerCallbacks();
-	void onCompletedConnect(elio::net::FileDescriptor fd);
+	void onCompletedConnect();
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
 	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
 	void addPendingWriteRequests();
@@ -107,8 +107,7 @@ inline void EchoClient::waitForConnection()
 
 void EchoClient::registerCallbacks()
 {
-	subscriber.on<elio::events::ConnectEvent>(
-		[this](elio::events::ConnectEvent &&event) { onCompletedConnect(event.socket_fd); });
+	subscriber.on<elio::events::ConnectEvent>([this](elio::events::ConnectEvent &&) { onCompletedConnect(); });
 
 	subscriber.on<elio::events::ReadEvent>(
 		[this](elio::events::ReadEvent &&event) { onCompletedRead(event.fd, std::move(event.bytes_read)); });
@@ -117,11 +116,8 @@ void EchoClient::registerCallbacks()
 		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
 }
 
-void EchoClient::onCompletedConnect(elio::net::FileDescriptor fd)
+void EchoClient::onCompletedConnect()
 {
-	if (fd != socket->raw())
-		throw std::runtime_error("Error connecting: Unexpected file descriptor");
-
 	socket->read(reception_buffer, subscriber);
 
 	{
