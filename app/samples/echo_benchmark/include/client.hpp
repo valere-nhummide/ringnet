@@ -29,6 +29,7 @@ class EchoClient {
 
     private:
 	void registerCallbacks();
+	void onError(elio::events::ErrorEvent event);
 	void onCompletedConnect();
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
 	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
@@ -113,6 +114,8 @@ inline void EchoClient::waitForConnection()
 
 void EchoClient::registerCallbacks()
 {
+	subscriber.on<elio::events::ErrorEvent>([this](elio::events::ErrorEvent &&event) { onError(event); });
+
 	subscriber.on<elio::events::ConnectEvent>([this](elio::events::ConnectEvent &&) { onCompletedConnect(); });
 
 	subscriber.on<elio::events::ReadEvent>(
@@ -120,6 +123,11 @@ void EchoClient::registerCallbacks()
 
 	subscriber.on<elio::events::WriteEvent>(
 		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
+}
+
+void EchoClient::onError(elio::events::ErrorEvent event)
+{
+	std::cerr << "Error: " << event.what() << std::endl;
 }
 
 void EchoClient::onCompletedConnect()

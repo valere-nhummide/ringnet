@@ -72,8 +72,6 @@ void EventLoop::run()
 			}
 
 			if (cqe->res < 0) {
-				/// @todo Move to user handler
-				std::cerr << "Error: " << strerror(-(cqe->res)) << std::endl;
 				subscriber->handle(events::ErrorEvent{ .error_code = -(cqe->res) });
 				return;
 			}

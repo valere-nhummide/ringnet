@@ -21,6 +21,7 @@ class EchoServer {
 
     private:
 	void registerCallbacks();
+	void onError(elio::events::ErrorEvent event);
 	void onCompletedAccept(elio::net::FileDescriptor client_socket_fd);
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
 	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
@@ -94,6 +95,8 @@ int EchoServer::listen(std::string_view listening_address, uint16_t listening_po
 
 void EchoServer::registerCallbacks()
 {
+	subscriber.on<elio::events::ErrorEvent>([this](elio::events::ErrorEvent &&event) { onError(event); });
+
 	subscriber.on<elio::events::AcceptEvent>(
 		[this](elio::events::AcceptEvent &&event) { onCompletedAccept(event.client_fd); });
 
@@ -102,6 +105,11 @@ void EchoServer::registerCallbacks()
 
 	subscriber.on<elio::events::WriteEvent>(
 		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
+}
+
+void EchoServer::onError(elio::events::ErrorEvent event)
+{
+	std::cerr << "Error: " << event.what() << std::endl;
 }
 
 void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
