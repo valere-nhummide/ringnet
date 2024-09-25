@@ -7,9 +7,13 @@ namespace elio::net::tcp
 
 class ClientSocket : public BaseSocket<DatagramProtocol::TCP> {
     public:
-	explicit ClientSocket(elio::EventLoop &loop_, std::string_view address_, uint16_t port)
-		: BaseSocket<DatagramProtocol::TCP>(loop_, address_, port, false)
+	explicit ClientSocket(elio::EventLoop &loop_) : BaseSocket<DatagramProtocol::TCP>(loop_)
 	{
+	}
+
+	ResolveStatus resolve(std::string_view address_, uint16_t port)
+	{
+		return _resolve(address_, port, true);
 	}
 
 	int connect()

@@ -59,7 +59,13 @@ void EchoServer::stop()
 
 void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
 {
-	listening_socket = std::make_unique<Socket>(loop, listening_address, listening_port);
+	listening_socket = std::make_unique<Socket>(loop);
+	auto resolve_status = listening_socket->resolve(listening_address, listening_port);
+	if (!resolve_status)
+		std::cerr << "Error resolving address " + std::string(listening_address) + ":" +
+				     std::to_string(listening_port) + ": " + resolve_status.what()
+			  << "\n";
+
 	int status = listening_socket->bind();
 	if (status)
 		throw std::runtime_error("Error binding to " + std::string(listening_address) + ":" +
@@ -128,7 +134,7 @@ void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::by
 	WriteRequest new_request;
 	new_request.fd = fd;
 	new_request.bytes_written = { std::make_move_iterator(bytes_read.begin()),
-					   std::make_move_iterator(bytes_read.end()) };
+				      std::make_move_iterator(bytes_read.end()) };
 
 	const auto [request_iter, _] = active_write_requests.emplace(std::make_pair(client_socket_fd, new_request));
 	AddRequestStatus status = loop.add(request_iter->second, subscriber);

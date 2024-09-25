@@ -25,12 +25,28 @@ enum IPVersion : decltype(AF_UNSPEC) { UNKNOWN = AF_UNSPEC, IPv4 = AF_INET, IPv6
 enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOCK_DGRAM, TCP = SOCK_STREAM };
 
 using Address = std::variant<sockaddr_in, sockaddr_in6>;
-using ResolveResult = std::pair<Address, IPVersion>;
+
+struct ResolveStatus {
+	static constexpr int SUCCESS = 0;
+	explicit ResolveStatus() : gai_return_code(SUCCESS) {};
+	explicit ResolveStatus(int gai_return_code_) : gai_return_code(gai_return_code_) {};
+	inline operator bool() const
+	{
+		return gai_return_code == SUCCESS;
+	}
+	inline const char *what() const
+	{
+		return gai_strerror(gai_return_code);
+	}
+
+    private:
+	int gai_return_code;
+};
 
 template <DatagramProtocol DP>
 class BaseSocket {
     public:
-	explicit BaseSocket(elio::EventLoop &loop, std::string_view address_, uint16_t port, bool should_listen);
+	explicit BaseSocket(elio::EventLoop &loop);
 
 	~BaseSocket();
 
@@ -39,12 +55,13 @@ class BaseSocket {
 
 	inline FileDescriptor raw() const;
 
-	static ResolveResult resolve(std::string_view address, uint16_t port, bool passive);
+	inline void setOption(int opt, bool enable = true);
 
 	std::pair<sockaddr *, size_t> getSockAddr();
 
     protected:
 	FileDescriptor fd = -1;
+	ResolveStatus _resolve(std::string_view address, uint16_t port, bool passive = true);
 
     private:
 	elio::EventLoop &loop;
@@ -52,22 +69,13 @@ class BaseSocket {
 	IPVersion ip_version = UNKNOWN;
 
 	/// @brief The read request is multi-shot, hence only one suffice.
-	/// It should be renewed on errors. 
+	/// It should be renewed on errors.
 	elio::uring::ReadRequest read_request{};
-
-	inline void setOption(int opt, bool enable = true);
 };
 
 template <DatagramProtocol DP>
-BaseSocket<DP>::BaseSocket(elio::EventLoop &loop_, std::string_view address_, uint16_t port, bool should_listen)
-	: loop(loop_)
+BaseSocket<DP>::BaseSocket(elio::EventLoop &loop_) : loop(loop_)
 {
-	std::tie(address, ip_version) = resolve(address_, port, should_listen);
-	fd = socket(ip_version, DP, 0);
-	if (fd < 0)
-		throw std::runtime_error("Error creating socket: " + std::string(strerror(errno)));
-
-	setOption(SO_REUSEADDR);
 }
 
 template <DatagramProtocol DP>
@@ -100,7 +108,7 @@ FileDescriptor BaseSocket<DP>::raw() const
 }
 
 template <DatagramProtocol DP>
-ResolveResult BaseSocket<DP>::resolve(std::string_view address, uint16_t port, bool passive)
+ResolveStatus BaseSocket<DP>::_resolve(std::string_view address_, uint16_t port, bool passive)
 {
 	addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -112,24 +120,29 @@ ResolveResult BaseSocket<DP>::resolve(std::string_view address, uint16_t port, b
 	auto addrinfo_deleter = [&](addrinfo *ptr) { ::freeaddrinfo(ptr); };
 	std::unique_ptr<addrinfo, decltype(addrinfo_deleter)> results_raii_wrapper{ results, addrinfo_deleter };
 
-	int status = ::getaddrinfo(address.data(), std::to_string(port).c_str(), &hints, &results);
+	int status = ::getaddrinfo(address_.data(), std::to_string(port).c_str(), &hints, &results);
 	if (status != 0)
-		throw std::runtime_error("Error resolving address " + std::string(address) + ":" +
-					 std::to_string(port) + ": " + std::string(gai_strerror(status)));
+		return ResolveStatus{ status };
 
 	for (addrinfo *result = results; result; result = result->ai_next) {
 		if (result->ai_family == AF_INET) {
 			sockaddr_in addr_v4;
 			memcpy(&addr_v4, result->ai_addr, sizeof(addr_v4));
-			return std::make_pair(addr_v4, IPv4);
-		} else if (result->ai_family == AF_INET6) {
+			address = addr_v4;
+			ip_version = IPv4;
+			break;
+		} else {
+			assert(result->ai_family == AF_INET6);
 			sockaddr_in6 addr_v6;
 			memcpy(&addr_v6, result->ai_addr, sizeof(addr_v6));
-			return std::make_pair(addr_v6, IPv6);
+			address = addr_v6;
+			ip_version = IPv6;
+			break;
 		}
 	}
 
-	return std::make_pair(Address{}, UNKNOWN);
+	fd = socket(ip_version, DP, 0);
+	return ResolveStatus{};
 }
 
 template <DatagramProtocol DP>

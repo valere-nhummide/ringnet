@@ -83,7 +83,14 @@ void EchoClient::stop()
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
-	socket = std::make_unique<Socket>(loop, server_address, server_port);
+	socket = std::make_unique<Socket>(loop);
+	const auto resolve_status = socket->resolve(server_address, server_port);
+	if (!resolve_status)
+		std::cerr << "Error resolving address " + std::string(server_address) + ":" +
+				     std::to_string(server_port) + ": " + resolve_status.what()
+			  << "\n";
+
+	socket->setOption(SO_REUSEADDR);
 
 	connect_request.socket_fd = socket->raw();
 	std::tie(connect_request.addr, connect_request.addrlen) = socket->getSockAddr();
