@@ -16,7 +16,7 @@ class EchoServer {
 	EchoServer(elio::EventLoop &loop_, size_t max_clients_count = 10);
 	~EchoServer();
 
-	void listen(std::string_view listening_address, uint16_t listening_port);
+	int listen(std::string_view listening_address, uint16_t listening_port);
 	void stop();
 
     private:
@@ -57,32 +57,39 @@ void EchoServer::stop()
 	loop.stop();
 }
 
-void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
+int EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
 {
 	listening_socket = std::make_unique<Socket>(loop);
 	auto resolve_status = listening_socket->resolve(listening_address, listening_port);
-	if (!resolve_status)
-		std::cerr << "Error resolving address " + std::string(listening_address) + ":" +
+	if (!resolve_status) {
+		std::cerr << "Error resolving " + std::string(listening_address) + ":" +
 				     std::to_string(listening_port) + ": " + resolve_status.what()
 			  << "\n";
-
-	int status = listening_socket->bind();
-	if (status)
-		throw std::runtime_error("Error binding to " + std::string(listening_address) + ":" +
-					 std::to_string(listening_port) + ": " + std::string(strerror(errno)));
-
-	status = listening_socket->listen(max_clients_count);
-	if (status)
-		throw std::runtime_error("Error listening to " + std::string(listening_address) + ":" +
-					 std::to_string(listening_port) + ": " + std::string(strerror(errno)));
-
+		return resolve_status.code();
+	}
+	auto bind_status = listening_socket->bind();
+	if (!bind_status) {
+		std::cerr << "Error binding to " + std::string(listening_address) + ":" +
+				     std::to_string(listening_port) + ": " + resolve_status.what()
+			  << "\n";
+		return resolve_status.code();
+	}
+	auto listen_status = listening_socket->listen(max_clients_count);
+	if (!listen_status) {
+		std::cerr << "Error listening to " + std::string(listening_address) + ":" +
+				     std::to_string(listening_port) + ": " + resolve_status.what()
+			  << "\n";
+		return resolve_status.code();
+	}
 	accept_request.listening_socket_fd = listening_socket->raw();
-	status = loop.add(accept_request, subscriber);
+	auto status = loop.add(accept_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		throw std::runtime_error("Error accepting: IO queue full");
 
 	std::cout << "Server: Listening to " << listening_address << ":" << listening_port << " (socket "
 		  << listening_socket->raw() << ")..." << std::endl;
+
+	return 0;
 }
 
 void EchoServer::registerCallbacks()

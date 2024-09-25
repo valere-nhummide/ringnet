@@ -26,22 +26,34 @@ enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOC
 
 using Address = std::variant<sockaddr_in, sockaddr_in6>;
 
-struct ResolveStatus {
+namespace detail
+{
+template <auto StrError = ::strerror, bool USE_ERRNO = false>
+struct Status {
 	static constexpr int SUCCESS = 0;
-	explicit ResolveStatus() : gai_return_code(SUCCESS) {};
-	explicit ResolveStatus(int gai_return_code_) : gai_return_code(gai_return_code_) {};
+	explicit Status() : return_code(SUCCESS) {};
+
+	explicit Status(int return_code_) : return_code(USE_ERRNO ? errno : return_code_) {};
+
 	inline operator bool() const
 	{
-		return gai_return_code == SUCCESS;
+		return return_code == SUCCESS;
 	}
 	inline const char *what() const
 	{
-		return gai_strerror(gai_return_code);
+		return StrError(return_code);
+	}
+	inline int code() const
+	{
+		return return_code;
 	}
 
     private:
-	int gai_return_code;
+	int return_code;
 };
+} // namespace detail
+
+using ResolveStatus = detail::Status<gai_strerror>;
 
 template <DatagramProtocol DP>
 class BaseSocket {

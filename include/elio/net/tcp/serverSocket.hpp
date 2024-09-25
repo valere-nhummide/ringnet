@@ -5,6 +5,9 @@
 namespace elio::net::tcp
 {
 
+using BindStatus = detail::Status<strerror, true>;
+using ListenStatus = detail::Status<strerror, true>;
+
 class ServerSocket : public BaseSocket<DatagramProtocol::TCP> {
     public:
 	explicit ServerSocket(elio::EventLoop &loop_) : BaseSocket<DatagramProtocol::TCP>(loop_)
@@ -19,12 +22,12 @@ class ServerSocket : public BaseSocket<DatagramProtocol::TCP> {
 	int bind()
 	{
 		auto [addr, addrlen] = this->getSockAddr();
-		return ::bind(this->fd, addr, addrlen);
+		return BindStatus{ ::bind(this->fd, addr, addrlen) };
 	}
 
 	int listen(size_t max_pending_requests = std::numeric_limits<int>::max())
 	{
-		return ::listen(this->fd, max_pending_requests);
+		return ListenStatus{ ::listen(this->fd, max_pending_requests) };
 	}
 };
 } // namespace elio::net::tcp
