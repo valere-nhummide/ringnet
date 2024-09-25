@@ -5,8 +5,8 @@
 namespace elio::net::tcp
 {
 
-using BindStatus = detail::Status<strerror, true>;
-using ListenStatus = detail::Status<strerror, true>;
+using BindStatus = Status<strerror, true>;
+using ListenStatus = Status<strerror, true>;
 
 class ServerSocket : public BaseSocket<DatagramProtocol::TCP> {
     public:

@@ -15,6 +15,7 @@
 #include <variant>
 
 #include "elio/eventLoop.hpp"
+#include "elio/net/status.hpp"
 
 namespace elio::net
 {
@@ -25,35 +26,7 @@ enum IPVersion : decltype(AF_UNSPEC) { UNKNOWN = AF_UNSPEC, IPv4 = AF_INET, IPv6
 enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOCK_DGRAM, TCP = SOCK_STREAM };
 
 using Address = std::variant<sockaddr_in, sockaddr_in6>;
-
-namespace detail
-{
-template <auto StrError = ::strerror, bool USE_ERRNO = false>
-struct Status {
-	static constexpr int SUCCESS = 0;
-	explicit Status() : return_code(SUCCESS) {};
-
-	explicit Status(int return_code_) : return_code(USE_ERRNO ? errno : return_code_) {};
-
-	inline operator bool() const
-	{
-		return return_code == SUCCESS;
-	}
-	inline const char *what() const
-	{
-		return StrError(return_code);
-	}
-	inline int code() const
-	{
-		return return_code;
-	}
-
-    private:
-	int return_code;
-};
-} // namespace detail
-
-using ResolveStatus = detail::Status<gai_strerror>;
+using ResolveStatus = Status<gai_strerror>;
 
 template <DatagramProtocol DP>
 class BaseSocket {
