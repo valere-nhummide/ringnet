@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <iostream>
 
 #include "elio/events.hpp"
 #include "elio/subscriber.hpp"
@@ -38,6 +39,9 @@ class EventLoop {
 	inline static const Request *getIssuingRequest(Completion cqe);
 
 	inline static Subscriber *getAssociatedSubscriber(const uring::RequestHeader &header);
+
+	template <class Stream = std::ostream>
+	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
 
 EventLoop::EventLoop(size_t request_queue_size) : requests(request_queue_size)
@@ -72,6 +76,8 @@ void EventLoop::run()
 			}
 
 			if (cqe->res < 0) {
+				/// @todo Provide this info in the error event instead, letting the subscriber log it.
+				logIssuingRequest(cqe);
 				subscriber->handle(events::ErrorEvent{ .error_code = -(cqe->res) });
 				return;
 			}
@@ -82,13 +88,13 @@ void EventLoop::run()
 			} break;
 			case Operation::READ: {
 				auto request = getIssuingRequest<uring::ReadRequest>(cqe);
-				assert(request->fd == cqe->res);
+				assert(static_cast<int>(request->bytes_read.size()) >= cqe->res);
 				subscriber->handle(
 					events::ReadEvent{ .fd = cqe->res, .bytes_read = request->bytes_read });
 			} break;
 			case Operation::WRITE: {
 				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
-				assert(request->fd == cqe->res);
+				assert(static_cast<int>(request->bytes_written.size()) >= cqe->res);
 				subscriber->handle(
 					events::WriteEvent{ .fd = cqe->res, .bytes_written = { /* to fill */ } });
 			} break;
@@ -136,6 +142,41 @@ uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
 {
 	request.header.user_data = static_cast<void *>(&subscriber);
 	return requests.add(request);
+}
+
+template <class Stream>
+void EventLoop::logIssuingRequest(Completion cqe, Stream &stream)
+{
+	using namespace elio::uring;
+	uring::RequestHeader *header = reinterpret_cast<uring::RequestHeader *>(cqe->user_data);
+
+	stream << "During handling of ";
+
+	switch (header->op) {
+	case Operation::ACCEPT: {
+		auto request = getIssuingRequest<uring::AcceptRequest>(cqe);
+		stream << "accept request for listening socket " << request->listening_socket_fd;
+	} break;
+	case Operation::READ: {
+		auto request = getIssuingRequest<uring::ReadRequest>(cqe);
+		stream << "read request of " << request->bytes_read.size() << " for socket " << request->fd;
+
+	} break;
+	case Operation::WRITE: {
+		auto request = getIssuingRequest<uring::WriteRequest>(cqe);
+		stream << "write request of " << request->bytes_written.size() << " for socket " << request->fd;
+
+	} break;
+	case Operation::CONNECT: {
+		auto request = getIssuingRequest<uring::ConnectRequest>(cqe);
+		stream << "connect request for socket " << request->socket_fd;
+
+	} break;
+	default:
+		stream << "malformed completion queue entry" << std::endl;
+		break;
+	}
+	stream << std::endl;
 }
 
 } // namespace elio

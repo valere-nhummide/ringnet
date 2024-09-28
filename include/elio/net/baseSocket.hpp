@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <netdb.h>
@@ -26,16 +27,17 @@ enum IPVersion : decltype(AF_UNSPEC) { UNKNOWN = AF_UNSPEC, IPv4 = AF_INET, IPv6
 enum DatagramProtocol : std::underlying_type_t<decltype(SOCK_DGRAM)> { UDP = SOCK_DGRAM, TCP = SOCK_STREAM };
 
 using Address = std::variant<sockaddr_in, sockaddr_in6>;
-using ResolveStatus = Status<gai_strerror>;
+using ResolveStatus = FileDescriptorStatus<gai_strerror>;
+using ReadStatus = MessagedStatus;
 
 template <DatagramProtocol DP>
 class BaseSocket {
     public:
 	explicit BaseSocket(elio::EventLoop &loop);
+	explicit BaseSocket(elio::EventLoop &loop, FileDescriptor fd_);
 
 	~BaseSocket();
 
-	enum class ReadStatus { OK, DISCONNECTED, QUEUE_FULL };
 	ReadStatus read(std::span<std::byte> reception_buffer, elio::Subscriber &subscriber);
 
 	inline FileDescriptor raw() const;
@@ -64,6 +66,11 @@ BaseSocket<DP>::BaseSocket(elio::EventLoop &loop_) : loop(loop_)
 }
 
 template <DatagramProtocol DP>
+BaseSocket<DP>::BaseSocket(elio::EventLoop &loop_, FileDescriptor fd_) : fd(fd_), loop(loop_)
+{
+}
+
+template <DatagramProtocol DP>
 BaseSocket<DP>::~BaseSocket()
 {
 	if (fd > 0)
@@ -72,18 +79,18 @@ BaseSocket<DP>::~BaseSocket()
 }
 
 template <DatagramProtocol DP>
-BaseSocket<DP>::ReadStatus BaseSocket<DP>::read(std::span<std::byte> reception_buffer, elio::Subscriber &subscriber)
+ReadStatus BaseSocket<DP>::read(std::span<std::byte> reception_buffer, elio::Subscriber &subscriber)
 {
 	if (!fd)
-		return ReadStatus::DISCONNECTED;
+		return ReadStatus{ false, "Socket is not connected" };
 
 	read_request.fd = fd;
 	read_request.bytes_read = reception_buffer;
 	elio::uring::AddRequestStatus status = loop.add(read_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
-		return ReadStatus::QUEUE_FULL;
+		return ReadStatus{ false, "Request queue is full" };
 
-	return ReadStatus::OK;
+	return ReadStatus{ true, "Success" };
 }
 
 template <DatagramProtocol DP>

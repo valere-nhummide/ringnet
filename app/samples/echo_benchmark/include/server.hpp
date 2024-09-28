@@ -7,6 +7,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "elio/net/tcp/clientSocket.hpp"
 #include "elio/net/tcp/serverSocket.hpp"
 #include "elio/uring/request.hpp"
 #include "elio/uring/requestQueue.hpp"
@@ -33,7 +34,7 @@ class EchoServer {
 	std::unique_ptr<Socket> listening_socket{};
 
 	elio::uring::AcceptRequest accept_request{};
-	std::unordered_map<elio::net::FileDescriptor, elio::uring::ReadRequest> active_read_requests{};
+	std::unordered_map<elio::net::FileDescriptor, elio::net::tcp::ClientSocket> client_sockets{};
 	std::unordered_map<elio::net::FileDescriptor, elio::uring::WriteRequest> active_write_requests{};
 
 	using Buffer = std::array<std::byte, 1024>;
@@ -115,25 +116,24 @@ void EchoServer::onError(elio::events::ErrorEvent event)
 void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
 {
 	using namespace elio::uring;
-	if (active_read_requests.find(client_socket_fd) != active_read_requests.cend()) {
-		std::cout << "Already reading from client socket " << client_socket_fd << "." << std::endl;
+	if (client_sockets.find(client_socket_fd) != client_sockets.cend()) {
+		std::cout << "Client already connected on socket " << client_socket_fd << "." << std::endl;
 		return;
 	}
 
 	std::cout << "Server: Received client connection request (socket " << client_socket_fd << ")." << std::endl;
 
-	const auto [buffer_iter, was_inserted] = reception_buffers.emplace(std::make_pair(client_socket_fd, Buffer{}));
-	assert(was_inserted);
+	const auto [buffer_iter, buffer_was_inserted] =
+		reception_buffers.emplace(std::make_pair(client_socket_fd, Buffer{}));
+	assert(buffer_was_inserted);
 
-	ReadRequest new_request;
-	new_request.fd = client_socket_fd;
-	new_request.bytes_read = buffer_iter->second;
+	const auto [client_socket_iter, socket_was_inserted] =
+		client_sockets.try_emplace(client_socket_fd, loop, client_socket_fd);
+	assert(socket_was_inserted);
 
-	const auto [request_iter, _] = active_read_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = loop.add(request_iter->second, subscriber);
-
-	if (status != AddRequestStatus::OK)
-		throw std::runtime_error("Adding read request failed");
+	auto status = client_socket_iter->second.read(buffer_iter->second, subscriber);
+	if (!status)
+		std::cerr << "Server: Error reading from client socket: " << status.what() << std::endl;
 }
 
 void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read)

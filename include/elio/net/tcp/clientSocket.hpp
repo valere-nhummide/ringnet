@@ -11,6 +11,10 @@ class ClientSocket : public BaseSocket<DatagramProtocol::TCP> {
 	{
 	}
 
+	explicit ClientSocket(elio::EventLoop &loop_, FileDescriptor fd_)
+		: BaseSocket<DatagramProtocol::TCP>(loop_, fd_)
+	{
+	}
 	ResolveStatus resolve(std::string_view address_, uint16_t port)
 	{
 		return _resolve(address_, port, true);
