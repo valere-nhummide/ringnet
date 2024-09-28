@@ -32,7 +32,7 @@ class EchoClient {
 	void onError(elio::events::ErrorEvent event);
 	void onCompletedConnect();
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
-	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
+	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<const std::byte> &bytes_written);
 	void addPendingWriteRequests();
 
 	elio::EventLoop &loop;
@@ -148,7 +148,7 @@ void EchoClient::onCompletedRead(elio::net::FileDescriptor, std::span<std::byte>
 	std::cout << "Client: Received \"" << reinterpret_cast<char *>(bytes_read.data()) << "\"" << std::endl;
 }
 
-void EchoClient::onCompletedWrite(elio::net::FileDescriptor, std::span<std::byte> &bytes_written)
+void EchoClient::onCompletedWrite(elio::net::FileDescriptor, std::span<const std::byte> &bytes_written)
 {
 	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(bytes_written.data()) << "\"" << std::endl;
 	write_requests.clear();

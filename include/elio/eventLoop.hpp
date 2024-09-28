@@ -96,7 +96,7 @@ void EventLoop::run()
 				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
 				assert(static_cast<int>(request->bytes_written.size()) >= cqe->res);
 				subscriber->handle(
-					events::WriteEvent{ .fd = cqe->res, .bytes_written = { /* to fill */ } });
+					events::WriteEvent{ .fd = cqe->res, .bytes_written = request->bytes_written });
 			} break;
 			case Operation::CONNECT: {
 				subscriber->handle(events::ConnectEvent{});

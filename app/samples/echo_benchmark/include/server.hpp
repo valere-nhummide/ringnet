@@ -25,7 +25,7 @@ class EchoServer {
 	void onError(elio::events::ErrorEvent event);
 	void onCompletedAccept(elio::net::FileDescriptor client_socket_fd);
 	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
-	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &bytes_written);
+	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<const std::byte> &bytes_written);
 
 	elio::EventLoop &loop;
 	elio::Subscriber subscriber{};
@@ -157,8 +157,8 @@ void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::by
 	if (status != AddRequestStatus::OK)
 		throw std::runtime_error("Adding write request failed");
 }
-void EchoServer::onCompletedWrite(elio::net::FileDescriptor fd, std::span<std::byte> &)
+void EchoServer::onCompletedWrite(elio::net::FileDescriptor fd, std::span<const std::byte> &)
 {
-	const size_t erased_count = active_write_requests.erase(fd);
+	[[maybe_unused]] const size_t erased_count = active_write_requests.erase(fd);
 	assert(erased_count);
 }
