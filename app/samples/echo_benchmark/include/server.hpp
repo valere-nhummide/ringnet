@@ -52,16 +52,15 @@ void EchoServer::registerCallbacks()
 		std::cout << "Server: Received client connection request (endpoint " << new_connection.endpoint().fd
 			  << ")." << std::endl;
 
+		new_connection.onRead([this](elio::events::ReadEvent &&event) { onRead(std::move(event)); });
+
+		auto status = new_connection.asyncRead();
+		if (!status)
+			std::cerr << "Server: Error reading from client endpoint " << new_connection.endpoint().fd
+				  << ": " << status.what() << std::endl;
+
 		const auto [connection_iter, was_inserted] =
 			connections.try_emplace(new_connection.endpoint(), std::move(new_connection));
-
-		elio::net::Connection &added_connection = connection_iter->second;
-		added_connection.onRead([this](elio::events::ReadEvent &&event) { onRead(std::move(event)); });
-
-		auto status = added_connection.asyncRead();
-		if (!status)
-			std::cerr << "Server: Error reading from client endpoint " << added_connection.endpoint().fd
-				  << ": " << status.what() << std::endl;
 		assert(was_inserted);
 	});
 }
