@@ -21,8 +21,8 @@ int main(int, char *[])
 
 	EchoClient client{ loop };
 	client.connect("127.0.0.1", 6789);
-	client.waitForConnection();
 	client.send("Hello from client!");
 
 	std::this_thread::sleep_for(1s);
+	loop.stop();
 }

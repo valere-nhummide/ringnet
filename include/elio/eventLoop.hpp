@@ -5,7 +5,9 @@
 #include <iostream>
 
 #include "elio/events.hpp"
+#include "elio/status.hpp"
 #include "elio/subscriber.hpp"
+#include "elio/uring/request.hpp"
 #include "elio/uring/requestQueue.hpp"
 
 namespace elio
@@ -18,7 +20,8 @@ class EventLoop {
 	void run();
 	void stop();
 
-	/// @brief Add a request to the queue. The associated subscriber will be notified once the request is completed.
+	/// @brief Add a request to be prepared, then submitted. The associated subscriber will be notified once the
+	/// request is completed.
 	/// @tparam Request Type of the request
 	/// @param request Content of the request
 	/// @param subscriber Notified subscriber
@@ -28,7 +31,7 @@ class EventLoop {
 	uring::AddRequestStatus add(Request &request, Subscriber &subscriber);
 
     private:
-	elio::uring::RequestQueue requests;
+	elio::uring::RequestQueue active_requests;
 	std::atomic_bool should_continue{ true };
 
 	using Completion = const io_uring_cqe *;
@@ -44,7 +47,7 @@ class EventLoop {
 	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
 
-EventLoop::EventLoop(size_t request_queue_size) : requests(request_queue_size)
+EventLoop::EventLoop(size_t request_queue_size) : active_requests(request_queue_size)
 {
 }
 
@@ -53,16 +56,16 @@ void EventLoop::run()
 	using namespace elio::uring;
 
 	while (should_continue) {
-		SubmitStatus submit_status = requests.submit(std::chrono::milliseconds(100));
+		SubmitStatus submit_status = active_requests.submit(std::chrono::milliseconds(100));
 
-		if (requests.shouldContinueSubmitting(submit_status))
+		if (active_requests.shouldContinueSubmitting(submit_status))
 			continue;
 		else if (submit_status < 0) {
 			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
 			continue;
 		}
 
-		requests.forEachCompletion([](Completion cqe) {
+		active_requests.forEachCompletion([](Completion cqe) {
 			if (!cqe->user_data) {
 				std::cerr << "Error: Malformed completion queue entry" << std::endl;
 				return;
@@ -88,9 +91,11 @@ void EventLoop::run()
 			} break;
 			case Operation::READ: {
 				auto request = getIssuingRequest<uring::ReadRequest>(cqe);
+				// The result holds the number of bytes read.
 				assert(static_cast<int>(request->bytes_read.size()) >= cqe->res);
-				subscriber->handle(
-					events::ReadEvent{ .fd = cqe->res, .bytes_read = request->bytes_read });
+				assert(cqe->res >= 0);
+				subscriber->handle(events::ReadEvent{
+					.fd = request->fd, .bytes_read = request->bytes_read.subspan(0, cqe->res) });
 			} break;
 			case Operation::WRITE: {
 				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
@@ -141,7 +146,7 @@ template <class Request>
 uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
 {
 	request.header.user_data = static_cast<void *>(&subscriber);
-	return requests.add(request);
+	return active_requests.prepare(request);
 }
 
 template <class Stream>
@@ -159,12 +164,12 @@ void EventLoop::logIssuingRequest(Completion cqe, Stream &stream)
 	} break;
 	case Operation::READ: {
 		auto request = getIssuingRequest<uring::ReadRequest>(cqe);
-		stream << "read request of " << request->bytes_read.size() << " for socket " << request->fd;
+		stream << "read request of " << request->bytes_read.size() << " bytes for socket " << request->fd;
 
 	} break;
 	case Operation::WRITE: {
 		auto request = getIssuingRequest<uring::WriteRequest>(cqe);
-		stream << "write request of " << request->bytes_written.size() << " for socket " << request->fd;
+		stream << "write request of " << request->bytes_written.size() << " bytes for socket " << request->fd;
 
 	} break;
 	case Operation::CONNECT: {

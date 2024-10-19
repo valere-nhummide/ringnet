@@ -1,164 +1,89 @@
 #pragma once
 
 #include <cassert>
-#include <chrono>
 #include <iostream>
+#include <map>
 #include <string_view>
-#include <thread>
-#include <unordered_map>
 
-#include "elio/net/tcp/clientSocket.hpp"
-#include "elio/net/tcp/serverSocket.hpp"
-#include "elio/uring/request.hpp"
-#include "elio/uring/requestQueue.hpp"
+#include "elio/net/acceptor.hpp"
+#include "elio/net/connection.hpp"
+#include "elio/net/endpoint.hpp"
 
 class EchoServer {
     public:
 	EchoServer(elio::EventLoop &loop_, size_t max_clients_count = 10);
-	~EchoServer();
 
-	int listen(std::string_view listening_address, uint16_t listening_port);
-	void stop();
+	void listen(std::string_view listening_address, uint16_t listening_port);
 
     private:
 	void registerCallbacks();
-	void onError(elio::events::ErrorEvent event);
-	void onCompletedAccept(elio::net::FileDescriptor client_socket_fd);
-	void onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read);
-	void onCompletedWrite(elio::net::FileDescriptor fd, std::span<const std::byte> &bytes_written);
+	void onRead(elio::events::ReadEvent &&event);
 
 	elio::EventLoop &loop;
-	elio::Subscriber subscriber{};
-
-	using Socket = elio::net::tcp::ServerSocket;
-	std::unique_ptr<Socket> listening_socket{};
-
-	elio::uring::AcceptRequest accept_request{};
-	std::unordered_map<elio::net::FileDescriptor, elio::net::tcp::ClientSocket> client_sockets{};
-	std::unordered_map<elio::net::FileDescriptor, elio::uring::WriteRequest> active_write_requests{};
-
-	using Buffer = std::array<std::byte, 1024>;
-	std::unordered_map<elio::net::FileDescriptor, Buffer> reception_buffers{};
-
-	size_t max_clients_count;
+	elio::net::Acceptor<elio::net::TCP> acceptor;
+	std::map<elio::net::Endpoint, elio::net::Connection> connections{};
 };
 
-EchoServer::EchoServer(elio::EventLoop &loop_, size_t max_clients_count_)
-	: loop(loop_), max_clients_count(max_clients_count_)
+EchoServer::EchoServer(elio::EventLoop &loop_, size_t max_clients_count)
+	: loop(loop_), acceptor(loop, max_clients_count)
 {
 	registerCallbacks();
 }
 
-EchoServer::~EchoServer()
+void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
 {
-	stop();
-}
-
-void EchoServer::stop()
-{
-	loop.stop();
-}
-
-int EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
-{
-	listening_socket = std::make_unique<Socket>(loop);
-	auto resolve_status = listening_socket->resolve(listening_address, listening_port);
-	if (!resolve_status) {
-		std::cerr << "Error resolving " + std::string(listening_address) + ":" +
-				     std::to_string(listening_port) + ": " + resolve_status.what()
-			  << "\n";
-		return resolve_status.code();
-	}
-	auto bind_status = listening_socket->bind();
-	if (!bind_status) {
-		std::cerr << "Error binding to " + std::string(listening_address) + ":" +
-				     std::to_string(listening_port) + ": " + resolve_status.what()
-			  << "\n";
-		return resolve_status.code();
-	}
-	auto listen_status = listening_socket->listen(max_clients_count);
-	if (!listen_status) {
-		std::cerr << "Error listening to " + std::string(listening_address) + ":" +
-				     std::to_string(listening_port) + ": " + resolve_status.what()
-			  << "\n";
-		return resolve_status.code();
-	}
-	accept_request.listening_socket_fd = listening_socket->raw();
-	auto status = loop.add(accept_request, subscriber);
-	if (status == elio::uring::QUEUE_FULL)
-		throw std::runtime_error("Error accepting: IO queue full");
-
-	std::cout << "Server: Listening to " << listening_address << ":" << listening_port << " (socket "
-		  << listening_socket->raw() << ")..." << std::endl;
-
-	return 0;
+	auto listening = acceptor.listen(listening_address, listening_port);
+	if (!listening)
+		std::cout << "Server: Could not listen to " << listening_address << ":" << listening_port << std::endl;
 }
 
 void EchoServer::registerCallbacks()
 {
-	subscriber.on<elio::events::ErrorEvent>([this](elio::events::ErrorEvent &&event) { onError(event); });
+	acceptor.onError([](elio::events::ErrorEvent &&event) { std::cerr << "Error: " << event.what() << std::endl; });
 
-	subscriber.on<elio::events::AcceptEvent>(
-		[this](elio::events::AcceptEvent &&event) { onCompletedAccept(event.client_fd); });
+	acceptor.onNewConnection([this](elio::net::Connection &&new_connection) {
+		using namespace elio::uring;
+		if (connections.find(new_connection.endpoint()) != connections.cend()) {
+			std::cout << "Server: Client already connected (endpoint  " << new_connection.endpoint().fd
+				  << ")." << std::endl;
+			return;
+		}
 
-	subscriber.on<elio::events::ReadEvent>(
-		[this](elio::events::ReadEvent &&event) { onCompletedRead(event.fd, std::move(event.bytes_read)); });
+		std::cout << "Server: Received client connection request (endpoint " << new_connection.endpoint().fd
+			  << ")." << std::endl;
 
-	subscriber.on<elio::events::WriteEvent>(
-		[this](elio::events::WriteEvent &&event) { onCompletedWrite(event.fd, event.bytes_written); });
+		const auto [connection_iter, was_inserted] =
+			connections.try_emplace(new_connection.endpoint(), std::move(new_connection));
+
+		elio::net::Connection &added_connection = connection_iter->second;
+		added_connection.onRead([this](elio::events::ReadEvent &&event) { onRead(std::move(event)); });
+
+		auto status = added_connection.asyncRead();
+		if (!status)
+			std::cerr << "Server: Error reading from client endpoint " << added_connection.endpoint().fd
+				  << ": " << status.what() << std::endl;
+		assert(was_inserted);
+	});
 }
 
-void EchoServer::onError(elio::events::ErrorEvent event)
-{
-	std::cerr << "Error: " << event.what() << std::endl;
-}
-
-void EchoServer::onCompletedAccept(elio::net::FileDescriptor client_socket_fd)
-{
-	using namespace elio::uring;
-	if (client_sockets.find(client_socket_fd) != client_sockets.cend()) {
-		std::cout << "Client already connected on socket " << client_socket_fd << "." << std::endl;
-		return;
-	}
-
-	std::cout << "Server: Received client connection request (socket " << client_socket_fd << ")." << std::endl;
-
-	const auto [buffer_iter, buffer_was_inserted] =
-		reception_buffers.emplace(std::make_pair(client_socket_fd, Buffer{}));
-	assert(buffer_was_inserted);
-
-	const auto [client_socket_iter, socket_was_inserted] =
-		client_sockets.try_emplace(client_socket_fd, loop, client_socket_fd);
-	assert(socket_was_inserted);
-
-	auto status = client_socket_iter->second.read(buffer_iter->second, subscriber);
-	if (!status)
-		std::cerr << "Server: Error reading from client socket: " << status.what() << std::endl;
-}
-
-void EchoServer::onCompletedRead(elio::net::FileDescriptor fd, std::span<std::byte> bytes_read)
+void EchoServer::onRead(elio::events::ReadEvent &&event)
 {
 	using namespace elio::uring;
-	elio::net::FileDescriptor client_socket_fd = fd;
 
-	if (active_write_requests.find(client_socket_fd) != active_write_requests.cend()) {
-		std::cout << "Already writing to client socket " << client_socket_fd << "." << std::endl;
-		return;
-	}
+	const char *message_data = reinterpret_cast<const char *>(event.bytes_read.data());
+	const std::string_view as_characters{ message_data, message_data + event.bytes_read.size() };
 
-	WriteRequest new_request;
-	new_request.fd = fd;
-	new_request.bytes_written = { std::make_move_iterator(bytes_read.begin()),
-				      std::make_move_iterator(bytes_read.end()) };
+	std::cout << "Server: Received message on socket " << event.fd << ": " << as_characters << std::endl;
 
-	const auto [request_iter, _] = active_write_requests.emplace(std::make_pair(client_socket_fd, new_request));
-	AddRequestStatus status = loop.add(request_iter->second, subscriber);
+	const auto connection_iter = connections.find(elio::net::Endpoint{ .fd = event.fd });
+	if (connection_iter == connections.cend())
+		std::cerr << "Server: No connection attached to socket " << event.fd << std::endl;
 
-	if (status != AddRequestStatus::OK)
-		throw std::runtime_error("Adding write request failed");
-}
-void EchoServer::onCompletedWrite(elio::net::FileDescriptor fd, std::span<const std::byte> &)
-{
-	[[maybe_unused]] const size_t erased_count = active_write_requests.erase(fd);
-	assert(erased_count);
+	std::vector<std::byte> response = { std::make_move_iterator(event.bytes_read.begin()),
+					    std::make_move_iterator(event.bytes_read.end()) };
+
+	const auto write_status = connection_iter->second.asyncWrite(std::move(response));
+
+	if (!write_status)
+		std::cerr << "Server: could not write to client (" << write_status.what() << std::endl;
 }

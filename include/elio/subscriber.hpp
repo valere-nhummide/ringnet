@@ -16,12 +16,14 @@ class Subscriber {
 	/// @todo Make this a variadic template
 	std::tuple<Callback<events::ErrorEvent>, Callback<events::AcceptEvent>, Callback<events::ReadEvent>,
 		   Callback<events::WriteEvent>, Callback<events::ConnectEvent>>
-		handlers;
+		handlers{};
 
 	template <class Event>
 	auto handle(Event &&data) noexcept
 	{
-		return handler<Event>()(std::move(data));
+		const auto &handler_ = handler<Event>();
+		if (handler_)
+			return handler_(std::move(data));
 	}
 
 	template <class Event>

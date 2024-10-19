@@ -34,10 +34,10 @@ class RequestQueue {
 	template <class UnaryFunc>
 	void forEachCompletion(UnaryFunc &&function);
 
-	AddRequestStatus add(const AcceptRequest &request);
-	AddRequestStatus add(const ConnectRequest &request);
-	AddRequestStatus add(const ReadRequest &request);
-	AddRequestStatus add(const WriteRequest &request);
+	AddRequestStatus prepare(const AcceptRequest &request);
+	AddRequestStatus prepare(const ConnectRequest &request);
+	AddRequestStatus prepare(const ReadRequest &request);
+	AddRequestStatus prepare(const WriteRequest &request);
 
     private:
 	io_uring ring{};
@@ -102,7 +102,7 @@ void RequestQueue::forEachCompletion(UnaryFunc &&function)
 		io_uring_cq_advance(&ring, processed);
 }
 
-AddRequestStatus RequestQueue::add(const AcceptRequest &request)
+AddRequestStatus RequestQueue::prepare(const AcceptRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -114,7 +114,7 @@ AddRequestStatus RequestQueue::add(const AcceptRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::add(const ConnectRequest &request)
+AddRequestStatus RequestQueue::prepare(const ConnectRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -126,7 +126,7 @@ AddRequestStatus RequestQueue::add(const ConnectRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::add(const WriteRequest &request)
+AddRequestStatus RequestQueue::prepare(const WriteRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -138,7 +138,7 @@ AddRequestStatus RequestQueue::add(const WriteRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::add(const ReadRequest &request)
+AddRequestStatus RequestQueue::prepare(const ReadRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
