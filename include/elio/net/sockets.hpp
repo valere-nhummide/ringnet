@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <variant>
 
+#include <tl/expected.hpp>
+
 /// @brief Free methods to manipulate sockets. All those methods are blocking.
 namespace elio::net
 {
@@ -33,18 +35,21 @@ struct FileDescriptorStatus;
 /// It stores the address once resolved.
 class Socket;
 
+/// @brief Wrap the linux sockaddr_in or sockaddr_in6 in a variant and expose some utilities.
+struct SocketAddress;
+
 using SetOptionStatus = FileDescriptorStatus<strerror, true>;
 SetOptionStatus set_option(Socket &socket, int option, bool enable = true);
 
 using ResolveStatus = FileDescriptorStatus<gai_strerror>;
-ResolveStatus resolve(Socket &socket, std::string_view hostname, uint16_t port, DatagramProtocol datagram_protocol,
-		      bool passive);
+using ResolvedAddress = tl::expected<SocketAddress, ResolveStatus>;
+ResolvedAddress resolve(std::string_view hostname, uint16_t port, DatagramProtocol datagram_protocol, bool passive);
 
 using ConnectStatus = FileDescriptorStatus<strerror, true>;
-ConnectStatus connect(Socket &socket);
+ConnectStatus connect(Socket &socket, const SocketAddress &address);
 
 using BindStatus = FileDescriptorStatus<strerror, true>;
-BindStatus bind(Socket &socket);
+BindStatus bind(Socket &socket, const SocketAddress &address);
 
 using ListenStatus = FileDescriptorStatus<strerror, true>;
 ListenStatus listen(Socket &socket, size_t max_pending_requests = std::numeric_limits<int>::max());
@@ -89,8 +94,6 @@ class Socket {
 
 	inline explicit operator FileDescriptor() const;
 	inline explicit operator bool() const;
-	using Address = std::variant<sockaddr_in, sockaddr_in6>;
-	std::optional<Address> address{};
 
     private:
 	static constexpr FileDescriptor INVALID = -1;
@@ -117,7 +120,6 @@ Socket::~Socket()
 	if (fd > 0)
 		::close(fd);
 	fd = INVALID;
-	address.reset();
 }
 
 inline Socket::operator FileDescriptor() const
@@ -130,14 +132,39 @@ inline Socket::operator bool() const
 	return (fd > 0);
 }
 
+struct SocketAddress {
+	std::variant<sockaddr_in, sockaddr_in6> underlying;
+
+	inline std::pair<const sockaddr *, size_t> as_sockaddr() const;
+	inline std::optional<IPVersion> ip_version() const;
+};
+
+std::pair<const sockaddr *, size_t> SocketAddress::as_sockaddr() const
+{
+	if (auto ptr_v4 = std::get_if<sockaddr_in>(&underlying); ptr_v4)
+		return std::make_pair(reinterpret_cast<const sockaddr *>(ptr_v4), sizeof(sockaddr_in));
+	if (auto ptr_v6 = std::get_if<sockaddr_in6>(&underlying); ptr_v6)
+		return std::make_pair(reinterpret_cast<const sockaddr *>(ptr_v6), sizeof(sockaddr_in));
+
+	return std::make_pair(nullptr, 0);
+}
+
+inline std::optional<IPVersion> SocketAddress::ip_version() const
+{
+	if (auto ptr_v4 = std::get_if<sockaddr_in>(&underlying); ptr_v4)
+		return IPVersion::IPv4;
+	if (auto ptr_v6 = std::get_if<sockaddr_in6>(&underlying); ptr_v6)
+		return IPVersion::IPv6;
+	return std::nullopt;
+}
+
 SetOptionStatus set_option(Socket &socket, int option, bool enable)
 {
 	int value = enable ? 1 : 0;
 	return SetOptionStatus{ ::setsockopt(socket.fd, SOL_SOCKET, option, &value, sizeof(value)) };
 }
 
-ResolveStatus resolve(Socket &socket, std::string_view hostname, uint16_t port, DatagramProtocol datagram_protocol,
-		      bool passive)
+ResolvedAddress resolve(std::string_view hostname, uint16_t port, DatagramProtocol datagram_protocol, bool passive)
 {
 	addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -151,60 +178,41 @@ ResolveStatus resolve(Socket &socket, std::string_view hostname, uint16_t port, 
 
 	int status = ::getaddrinfo(hostname.data(), std::to_string(port).c_str(), &hints, &results);
 	if (status != 0)
-		return ResolveStatus{ status };
+		return tl::unexpected<ResolveStatus>(status);
 
-	IPVersion ip_version{};
-	Socket::Address address{};
+	SocketAddress address{};
 	for (addrinfo *result = results; result; result = result->ai_next) {
 		if (result->ai_family == AF_INET) {
 			sockaddr_in addr_v4;
 			memcpy(&addr_v4, result->ai_addr, sizeof(addr_v4));
-			address = addr_v4;
-			ip_version = IPv4;
+			address.underlying = addr_v4;
 			break;
 		} else {
 			assert(result->ai_family == AF_INET6);
 			sockaddr_in6 addr_v6;
 			memcpy(&addr_v6, result->ai_addr, sizeof(addr_v6));
-			address = addr_v6;
-			ip_version = IPv6;
+			address.underlying = addr_v6;
 			break;
 		}
 	}
 
-	socket.fd = ::socket(ip_version, datagram_protocol, 0);
-	socket.address = address;
-	return ResolveStatus{};
+	return address;
 }
 
 namespace detail
 {
-std::pair<const sockaddr *, size_t> as_sockaddr(const Socket::Address &address)
-{
-	if (auto ptr_v4 = std::get_if<sockaddr_in>(&address); ptr_v4)
-		return std::make_pair(reinterpret_cast<const sockaddr *>(ptr_v4), sizeof(sockaddr_in));
-	if (auto ptr_v6 = std::get_if<sockaddr_in6>(&address); ptr_v6)
-		return std::make_pair(reinterpret_cast<const sockaddr *>(ptr_v6), sizeof(sockaddr_in));
 
-	return std::make_pair(nullptr, 0);
-}
 } // namespace detail
 
-ConnectStatus connect(Socket &socket)
+ConnectStatus connect(Socket &socket, const SocketAddress &address)
 {
-	if (!socket.address)
-		return ConnectStatus{ EINVAL };
-
-	auto [addr, addrlen] = detail::as_sockaddr(socket.address.value());
+	auto [addr, addrlen] = address.as_sockaddr();
 	return ConnectStatus{ ::connect(socket.fd, addr, addrlen) };
 }
 
-BindStatus bind(Socket &socket)
+BindStatus bind(Socket &socket, const SocketAddress &address)
 {
-	if (!socket.address)
-		return ConnectStatus{ EINVAL };
-
-	auto [addr, addrlen] = detail::as_sockaddr(socket.address.value());
+	auto [addr, addrlen] = address.as_sockaddr();
 	return BindStatus{ ::bind(socket.fd, addr, addrlen) };
 }
 

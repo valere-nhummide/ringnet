@@ -75,25 +75,28 @@ MessagedStatus Resolver<DP>::ayncConnect(std::string_view server_address, uint16
 	if (connection_status == Status::PENDING)
 		return MessagedStatus{ false, "Already pending connection" };
 
-	const auto resolve_status = elio::net::resolve(socket, server_address, server_port, DP, true);
-	if (!resolve_status)
+	const auto resolved_address = elio::net::resolve(server_address, server_port, DP, true);
+	if (!resolved_address)
 		return MessagedStatus{ false, "Error resolving address " + std::string(server_address) + ":" +
-						      std::to_string(server_port) + ": " + resolve_status.what() };
+						      std::to_string(server_port) + ": " +
+						      resolved_address.error().what() };
+
+	assert(resolved_address->ip_version().has_value());
+	socket = ::socket(resolved_address->ip_version().value(), DP, 0);
 
 	auto socket_status = elio::net::set_option(socket, SO_REUSEADDR);
 	if (!socket_status)
 		return MessagedStatus{ false, "Error setting SO_REUSEADDR option to socket " +
 						      std::string(server_address) + ":" + std::to_string(server_port) +
-						      ": " + resolve_status.what() };
+						      ": " + socket_status.what() };
 
 	if constexpr (DP != TCP) {
 		onConnection();
 		return MessagedStatus{ true, "Connected" };
 	}
 
-	assert(socket.address && "Socket should have an address once resolved");
 	connect_request.socket_fd = socket.fd;
-	std::tie(connect_request.addr, connect_request.addrlen) = elio::net::detail::as_sockaddr(*(socket.address));
+	std::tie(connect_request.addr, connect_request.addrlen) = resolved_address->as_sockaddr();
 
 	auto status = loop.add(connect_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)

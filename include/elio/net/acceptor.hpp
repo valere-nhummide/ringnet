@@ -77,10 +77,14 @@ MessagedStatus Acceptor<DP>::listen(std::string_view listening_address, uint16_t
 	if (status == Status::LISTENING)
 		return MessagedStatus{ false, "Already listening" };
 
-	const auto resolve_status = elio::net::resolve(listening_socket, listening_address, listening_port, DP, true);
-	if (!resolve_status)
+	const auto resolved_address = elio::net::resolve(listening_address, listening_port, DP, true);
+	if (!resolved_address)
 		return MessagedStatus{ false, "Error resolving address " + std::string(listening_address) + ":" +
-						      std::to_string(listening_port) + ": " + resolve_status.what() };
+						      std::to_string(listening_port) + ": " +
+						      resolved_address.error().what() };
+
+	assert(resolved_address->ip_version().has_value());
+	listening_socket = ::socket(resolved_address->ip_version().value(), DP, 0);
 
 	auto socket_status = elio::net::set_option(listening_socket, SO_REUSEADDR);
 	if (!socket_status)
@@ -88,7 +92,7 @@ MessagedStatus Acceptor<DP>::listen(std::string_view listening_address, uint16_t
 						      std::string(listening_address) + ":" +
 						      std::to_string(listening_port) + ": " + socket_status.what() };
 
-	socket_status = elio::net::bind(listening_socket);
+	socket_status = elio::net::bind(listening_socket, *resolved_address);
 	if (!socket_status)
 		return MessagedStatus{ false, "Error binding to " + std::string(listening_address) + ":" +
 						      std::to_string(listening_port) + ": " + socket_status.what() };

@@ -34,5 +34,5 @@ add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(
   ${PROJECT_NAME} INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
                             $<INSTALL_INTERFACE:include>)
-target_link_libraries(${PROJECT_NAME} INTERFACE external::liburing)
+target_link_libraries(${PROJECT_NAME} INTERFACE external::expected external::liburing)
 add_subdirectory(app)

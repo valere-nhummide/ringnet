@@ -41,9 +41,10 @@ add_library(external::liburing ALIAS liburing)
 # ##############################################################################
 
 FetchContent_Declare(
-    tl_expeced
+    tl_expected
     URL ${CMAKE_CURRENT_SOURCE_DIR}/archives/expected-1.1.0.tar.gz
     URL_HASH
             SHA256=1db357f46dd2b24447156aaf970c4c40a793ef12a8a9c2ad9e096d9801368df6
 )
-FetchContent_MakeAvailable(tl_expeced)
+FetchContent_MakeAvailable(tl_expected)
+add_library(external::expected ALIAS expected)
