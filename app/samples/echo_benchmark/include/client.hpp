@@ -46,7 +46,7 @@ void EchoClient::send(std::string &&message)
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
-	const MessagedStatus request_status = resolver.ayncConnect(server_address, server_port);
+	const MessagedStatus request_status = resolver.asyncConnect(server_address, server_port);
 	if (!request_status) {
 		std::stringstream builder;
 		builder << "Client: Could not connect to " << server_address << ":" << server_port << "..."

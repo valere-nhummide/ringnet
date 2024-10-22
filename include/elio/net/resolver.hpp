@@ -32,7 +32,7 @@ class Resolver {
 	template <class Func>
 	void onError(Func &&callback);
 
-	MessagedStatus ayncConnect(std::string_view server_address, uint16_t server_port);
+	MessagedStatus asyncConnect(std::string_view server_address, uint16_t server_port);
 
 	void waitForConnection();
 	std::optional<Connection> getConnection();
@@ -70,7 +70,7 @@ void Resolver<DP>::onError(Func &&callback)
 }
 
 template <DatagramProtocol DP>
-MessagedStatus Resolver<DP>::ayncConnect(std::string_view server_address, uint16_t server_port)
+MessagedStatus Resolver<DP>::asyncConnect(std::string_view server_address, uint16_t server_port)
 {
 	if (connection_status == Status::PENDING)
 		return MessagedStatus{ false, "Already pending connection" };
