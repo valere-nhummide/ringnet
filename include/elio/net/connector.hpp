@@ -16,10 +16,10 @@
 namespace elio::net
 {
 
-/// @brief Resolve the address, then if TCP, try to connect to a server. Create a Connection object once resolution (and
-/// optional connection) succeed.
+/// @brief Resolve a server hostname and port, then request a connection. Create a Connection object once resolution
+/// connection succeeds.
 template <DatagramProtocol DP>
-class Resolver {
+class Connector {
     public:
 	enum class Status {
 		DISCONNECTED = -2,
@@ -27,7 +27,7 @@ class Resolver {
 		CONNECTED = 0,
 	};
 
-	explicit Resolver(elio::EventLoop &loop);
+	explicit Connector(elio::EventLoop &loop);
 
 	template <class Func>
 	void onError(Func &&callback);
@@ -43,7 +43,7 @@ class Resolver {
 	elio::uring::ConnectRequest connect_request{};
 	elio::Subscriber subscriber{};
 
-	std::atomic<Resolver<DP>::Status> connection_status = Resolver<DP>::Status::DISCONNECTED;
+	std::atomic<Connector<DP>::Status> connection_status = Connector<DP>::Status::DISCONNECTED;
 	std::mutex connection_mutex{};
 	std::condition_variable connection_cv{};
 
@@ -54,7 +54,7 @@ class Resolver {
 };
 
 template <DatagramProtocol DP>
-Resolver<DP>::Resolver(elio::EventLoop &loop_) : loop(loop_)
+Connector<DP>::Connector(elio::EventLoop &loop_) : loop(loop_)
 {
 	if constexpr (DP != TCP)
 		return;
@@ -64,13 +64,13 @@ Resolver<DP>::Resolver(elio::EventLoop &loop_) : loop(loop_)
 
 template <DatagramProtocol DP>
 template <class Func>
-void Resolver<DP>::onError(Func &&callback)
+void Connector<DP>::onError(Func &&callback)
 {
 	subscriber.on<elio::events::ErrorEvent> = std::move(callback);
 }
 
 template <DatagramProtocol DP>
-MessagedStatus Resolver<DP>::asyncConnect(std::string_view server_address, uint16_t server_port)
+MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint16_t server_port)
 {
 	if (connection_status == Status::PENDING)
 		return MessagedStatus{ false, "Already pending connection" };
@@ -107,7 +107,7 @@ MessagedStatus Resolver<DP>::asyncConnect(std::string_view server_address, uint1
 }
 
 template <DatagramProtocol DP>
-std::optional<Connection> Resolver<DP>::getConnection()
+std::optional<Connection> Connector<DP>::getConnection()
 {
 	if (connection_status != Status::CONNECTED)
 		return std::nullopt;
@@ -115,13 +115,13 @@ std::optional<Connection> Resolver<DP>::getConnection()
 }
 
 template <DatagramProtocol DP>
-bool Resolver<DP>::isConnected() const
+bool Connector<DP>::isConnected() const
 {
 	return (connection_status == Status::CONNECTED);
 }
 
 template <DatagramProtocol DP>
-void Resolver<DP>::waitForConnection()
+void Connector<DP>::waitForConnection()
 {
 	std::unique_lock<std::mutex> lock{ connection_mutex };
 	while (connection_status != Status::CONNECTED)
@@ -129,7 +129,7 @@ void Resolver<DP>::waitForConnection()
 }
 
 template <DatagramProtocol DP>
-void Resolver<DP>::onConnection()
+void Connector<DP>::onConnection()
 {
 	std::lock_guard<std::mutex> lock{ connection_mutex };
 	connection_status = Status::CONNECTED;

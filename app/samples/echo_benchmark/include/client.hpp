@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "elio/net/connection.hpp"
-#include "elio/net/resolver.hpp"
+#include "elio/net/connector.hpp"
 
 class EchoClient {
     public:
@@ -25,11 +25,11 @@ class EchoClient {
 	void addPendingWriteRequests();
 
 	elio::EventLoop &loop;
-	elio::net::Resolver<elio::net::TCP> resolver;
+	elio::net::Connector<elio::net::TCP> connector;
 	std::optional<elio::net::Connection> connection{};
 };
 
-EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_), resolver(loop)
+EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_), connector(loop)
 {
 }
 
@@ -46,7 +46,7 @@ void EchoClient::send(std::string &&message)
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
-	const MessagedStatus request_status = resolver.asyncConnect(server_address, server_port);
+	const MessagedStatus request_status = connector.asyncConnect(server_address, server_port);
 	if (!request_status) {
 		std::stringstream builder;
 		builder << "Client: Could not connect to " << server_address << ":" << server_port << "..."
@@ -54,9 +54,9 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 		std::cerr << request_status.what() << std::endl;
 		throw std::runtime_error(builder.str());
 	}
-	resolver.waitForConnection();
-	assert(resolver.isConnected());
-	connection = std::move(resolver.getConnection());
+	connector.waitForConnection();
+	assert(connector.isConnected());
+	connection = std::move(connector.getConnection());
 	registerCallbacks();
 }
 
