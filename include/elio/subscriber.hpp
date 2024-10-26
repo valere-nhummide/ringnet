@@ -3,21 +3,19 @@
 #include <functional>
 #include <tuple>
 
+#include "elio/traits/movable.hpp"
+
 /// @todo Should be removed, and use variadic template
 #include "elio/events.hpp"
 
 namespace elio
 {
-class Subscriber {
+/// @brief Do not move a subscriber: its address is associated to requests submitted to the kernel, in order to
+/// invoke one of its handlers on request completion. Hence, the address must remain untouched between submission and
+/// completion.
+class Subscriber : public traits::NonMovable {
     public:
-	/// @brief Do not move a subscriber: its address is associated to requests submitted to the kernel, in order to
-	/// invoke one of its handlers on request completion. Hence, the address must remain untouched between
-	/// submission and completion.
 	Subscriber() = default;
-	Subscriber(Subscriber &&) = delete;
-	Subscriber &operator=(Subscriber &&) = delete;
-	Subscriber(const Subscriber &) = delete;
-	Subscriber &operator=(const Subscriber &) = delete;
 
 	template <class Event>
 	using Callback = std::function<void(Event &&)>;

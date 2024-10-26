@@ -14,7 +14,7 @@ class EchoClient {
 	EchoClient(elio::EventLoop &loop);
 
 	void connect(std::string_view server_address, uint16_t server_port);
-	void send(std::string &&message);
+	void send(std::string_view message);
 
     private:
 	void registerCallbacks();
@@ -30,14 +30,14 @@ EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_)
 {
 }
 
-void EchoClient::send(std::string &&message)
+void EchoClient::send(std::string_view message)
 {
 	if (!connection)
 		throw std::runtime_error("Client: Cannot send when disconnected");
 
-	std::byte *message_view = reinterpret_cast<std::byte *>(message.data());
-	std::vector<std::byte> as_bytes{ message_view, message_view + message.size() };
-	connection->asyncWrite(std::move(as_bytes));
+	std::byte *message_view = reinterpret_cast<std::byte *>(const_cast<char *>(message.data()));
+	std::span<std::byte> as_bytes{ message_view, message.size() };
+	connection->asyncWrite(as_bytes);
 }
 
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
@@ -86,7 +86,7 @@ void EchoClient::onCompletedRead(std::span<std::byte> bytes_read)
 	std::cout << "Client: Received \"" << reinterpret_cast<char *>(bytes_read.data()) << "\"" << std::endl;
 }
 
-void EchoClient::onCompletedWrite(std::span<const std::byte> &bytes_written)
+void EchoClient::onCompletedWrite(std::span<std::byte> bytes_written)
 {
-	std::cout << "Client: Sent \"" << reinterpret_cast<const char *>(bytes_written.data()) << "\"" << std::endl;
+	std::cout << "Client: Sent \"" << reinterpret_cast<char *>(bytes_written.data()) << "\"" << std::endl;
 }

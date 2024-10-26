@@ -27,7 +27,7 @@ class Connection {
 	Connection(elio::EventLoop &loop, net::Socket &&socket);
 
 	MessagedStatus asyncRead();
-	MessagedStatus asyncWrite(std::vector<std::byte> &&sent_bytes);
+	MessagedStatus asyncWrite(std::span<std::byte> sent_bytes);
 
 	/// @todo Add concepts
 	template <class Func>
@@ -49,12 +49,15 @@ class Connection {
 
 	Endpoint endpoint_;
 
-	elio::uring::ReadRequest read_request{};
-	elio::uring::WriteRequest write_request{};
-
+	/// @brief The addresses of the objects submitted to the kernel should not change until they are completed:
+	/// neither the subscriber, which holds the handles, nor the requests themselves, nor any associated buffer.
+	/// Using smart pointers ensures that their address maintains valid when moving the Connection object around.
 	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
+	std::unique_ptr<elio::uring::ReadRequest> read_request = std::make_unique<elio::uring::ReadRequest>();
+	std::unique_ptr<elio::uring::WriteRequest> write_request = std::make_unique<elio::uring::WriteRequest>();
 
-	std::array<std::byte, 2048> reception_buffer{};
+	using Buffer = std::array<std::byte, 2048>;
+	std::unique_ptr<Buffer> reception_buffer = std::make_unique<Buffer>();
 };
 
 Connection::Connection(elio::EventLoop &loop_, Socket &&socket_)
@@ -82,20 +85,20 @@ void Connection::onWrite(Func &&callback)
 
 MessagedStatus Connection::asyncRead()
 {
-	read_request.fd = socket.fd;
-	read_request.bytes_read = reception_buffer;
-	uring::AddRequestStatus status = loop.get().add(read_request, *subscriber);
+	read_request->fd = socket.fd;
+	read_request->bytes_read = *reception_buffer;
+	uring::AddRequestStatus status = loop.get().add(*read_request, *subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 
 	return MessagedStatus{ true, "Success" };
 }
 
-MessagedStatus Connection::asyncWrite(std::vector<std::byte> &&sent_bytes)
+MessagedStatus Connection::asyncWrite(std::span<std::byte> sent_bytes)
 {
-	write_request.fd = socket.fd;
-	write_request.bytes_written = std::move(sent_bytes);
-	uring::AddRequestStatus status = loop.get().add(write_request, *subscriber);
+	write_request->fd = socket.fd;
+	write_request->bytes_written = sent_bytes;
+	uring::AddRequestStatus status = loop.get().add(*write_request, *subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

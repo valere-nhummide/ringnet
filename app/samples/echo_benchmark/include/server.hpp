@@ -78,10 +78,7 @@ void EchoServer::onRead(elio::events::ReadEvent &&event)
 	if (connection_iter == connections.cend())
 		std::cerr << "Server: No connection attached to socket " << event.fd << std::endl;
 
-	std::vector<std::byte> response = { std::make_move_iterator(event.bytes_read.begin()),
-					    std::make_move_iterator(event.bytes_read.end()) };
-
-	const auto write_status = connection_iter->second.asyncWrite(std::move(response));
+	const auto write_status = connection_iter->second.asyncWrite(event.bytes_read);
 
 	if (!write_status)
 		std::cerr << "Server: could not write to client (" << write_status.what() << std::endl;

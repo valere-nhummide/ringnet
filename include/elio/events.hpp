@@ -32,6 +32,6 @@ struct ReadEvent {
 
 struct WriteEvent {
 	int fd{};
-	std::span<const std::byte> bytes_written{};
+	std::span<std::byte> bytes_written{};
 };
 } // namespace elio::events
