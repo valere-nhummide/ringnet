@@ -19,17 +19,14 @@ class EchoClient {
     private:
 	void registerCallbacks();
 	void onError(elio::events::ErrorEvent event);
-	void onCompletedConnect();
 	void onCompletedRead(std::span<std::byte> bytes_read);
-	void onCompletedWrite(std::span<const std::byte> &bytes_written);
-	void addPendingWriteRequests();
+	void onCompletedWrite(std::span<std::byte> bytes_written);
 
 	elio::EventLoop &loop;
-	elio::net::Connector<elio::net::TCP> connector;
 	std::optional<elio::net::Connection> connection{};
 };
 
-EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_), connector(loop)
+EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_)
 {
 }
 
@@ -46,7 +43,17 @@ void EchoClient::send(std::string &&message)
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
-	const MessagedStatus request_status = connector.asyncConnect(server_address, server_port);
+
+	elio::net::Connector<elio::net::TCP> connector(loop);
+	connector.onError([this](elio::events::ErrorEvent &&event) { onError(event); });
+	connector.onConnection([this](elio::net::Connection &&accepted_connection) {
+		std::cout << "Client: Connected to " << accepted_connection.endpoint().fd << std::endl;
+		connection = std::move(accepted_connection);
+		registerCallbacks();
+	});
+
+	MessagedStatus request_status = connector.asyncConnect(server_address, server_port);
+
 	if (!request_status) {
 		std::stringstream builder;
 		builder << "Client: Could not connect to " << server_address << ":" << server_port << "..."
@@ -54,10 +61,8 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 		std::cerr << request_status.what() << std::endl;
 		throw std::runtime_error(builder.str());
 	}
+
 	connector.waitForConnection();
-	assert(connector.isConnected());
-	connection = std::move(connector.getConnection());
-	registerCallbacks();
 }
 
 void EchoClient::registerCallbacks()
