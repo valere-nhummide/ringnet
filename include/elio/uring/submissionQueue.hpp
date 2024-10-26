@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <span>
+#include <mutex>
 #include <stdexcept>
 #include <string.h>
 #include <string>
@@ -11,6 +11,7 @@
 #include <liburing.h>
 
 #include "elio/time/chronoUtils.hpp"
+#include "elio/uring/refContainer.hpp"
 #include "elio/uring/request.hpp"
 
 namespace elio::uring
@@ -19,10 +20,25 @@ namespace elio::uring
 enum AddRequestStatus { OK = 0, QUEUE_FULL };
 enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_READY = -EAGAIN };
 
-class RequestQueue {
+/// @brief Wrapper around the io_uring submission/completion queues.
+/// The caller adds requests:
+/// 1. Push them to a waiting list of pending requests.
+/// 2. Prepare the pending requests (io_uring_prep*)
+/// 3. Submit them, by batch (io_uring_submit*)
+/// 4. Handle their corresponding completion entries (io_uring_for_each_cqe)
+class SubmissionQueue {
+	RefContainer<AcceptRequest, ConnectRequest, ReadRequest, WriteRequest> pending_requests{};
+
     public:
-	explicit RequestQueue(size_t queue_size);
-	~RequestQueue();
+	explicit SubmissionQueue(size_t queue_size);
+	~SubmissionQueue();
+
+	template <class Request>
+	void push(const Request &request)
+	{
+		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
+		pending_requests.push(request);
+	}
 
 	SubmitStatus submit(std::chrono::milliseconds timeout = {});
 
@@ -34,12 +50,14 @@ class RequestQueue {
 	template <class UnaryFunc>
 	void forEachCompletion(UnaryFunc &&function);
 
+    private:
+	void preparePendingRequests();
 	AddRequestStatus prepare(const AcceptRequest &request);
 	AddRequestStatus prepare(const ConnectRequest &request);
 	AddRequestStatus prepare(const ReadRequest &request);
 	AddRequestStatus prepare(const WriteRequest &request);
+	std::mutex pending_requests_mutex{};
 
-    private:
 	io_uring ring{};
 
 	/// @brief Get a new entry from the submission queue. If fails the first time, try to get room in the queue by
@@ -55,20 +73,29 @@ class RequestQueue {
 	}
 };
 
-RequestQueue::RequestQueue(size_t queue_size)
+SubmissionQueue::SubmissionQueue(size_t queue_size)
 {
 	throwOnError(io_uring_queue_init(queue_size, &ring, 0), "Error initializing io_uring");
 }
 
-RequestQueue::~RequestQueue()
+SubmissionQueue::~SubmissionQueue()
 {
 	io_uring_queue_exit(&ring);
 }
 
-inline SubmitStatus RequestQueue::submit(std::chrono::milliseconds timeout)
+void SubmissionQueue::preparePendingRequests()
+{
+	std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
+	pending_requests.for_each([this](const auto &request) { prepare(request); });
+	pending_requests.clear();
+}
+
+inline SubmitStatus SubmissionQueue::submit(std::chrono::milliseconds timeout)
 {
 	static constexpr unsigned WAITED_COMPLETIONS = 1;
 	static constexpr sigset_t *BLOCKED_SIGNALS = nullptr;
+
+	preparePendingRequests();
 
 	if (timeout.count() <= 0)
 		return SubmitStatus{ io_uring_submit_and_wait(&ring, WAITED_COMPLETIONS) };
@@ -88,7 +115,7 @@ inline SubmitStatus RequestQueue::submit(std::chrono::milliseconds timeout)
 }
 
 template <class UnaryFunc>
-void RequestQueue::forEachCompletion(UnaryFunc &&function)
+void SubmissionQueue::forEachCompletion(UnaryFunc &&function)
 {
 	io_uring_cqe *cqe;
 	uint head = 0;
@@ -102,7 +129,7 @@ void RequestQueue::forEachCompletion(UnaryFunc &&function)
 		io_uring_cq_advance(&ring, processed);
 }
 
-AddRequestStatus RequestQueue::prepare(const AcceptRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const AcceptRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -114,7 +141,7 @@ AddRequestStatus RequestQueue::prepare(const AcceptRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::prepare(const ConnectRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const ConnectRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -126,7 +153,7 @@ AddRequestStatus RequestQueue::prepare(const ConnectRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::prepare(const WriteRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const WriteRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -138,7 +165,7 @@ AddRequestStatus RequestQueue::prepare(const WriteRequest &request)
 	return OK;
 }
 
-AddRequestStatus RequestQueue::prepare(const ReadRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const ReadRequest &request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -150,7 +177,7 @@ AddRequestStatus RequestQueue::prepare(const ReadRequest &request)
 	return OK;
 }
 
-inline io_uring_sqe *RequestQueue::getNewSubmissionQueueEntry()
+inline io_uring_sqe *SubmissionQueue::getNewSubmissionQueueEntry()
 {
 	io_uring_sqe *sqe = io_uring_get_sqe(&ring);
 

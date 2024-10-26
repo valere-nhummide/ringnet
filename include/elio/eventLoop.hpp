@@ -8,7 +8,7 @@
 #include "elio/status.hpp"
 #include "elio/subscriber.hpp"
 #include "elio/uring/request.hpp"
-#include "elio/uring/requestQueue.hpp"
+#include "elio/uring/submissionQueue.hpp"
 
 namespace elio
 {
@@ -31,12 +31,10 @@ class EventLoop {
 	uring::AddRequestStatus add(Request &request, Subscriber &subscriber);
 
     private:
-	elio::uring::RequestQueue active_requests;
+	elio::uring::SubmissionQueue submission_queue;
 	std::atomic_bool should_continue{ true };
 
 	using Completion = const io_uring_cqe *;
-
-	inline static uring::RequestHeader getIssuingRequestHeader(Completion cqe);
 
 	template <class Request>
 	inline static const Request *getIssuingRequest(Completion cqe);
@@ -47,7 +45,7 @@ class EventLoop {
 	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
 
-EventLoop::EventLoop(size_t request_queue_size) : active_requests(request_queue_size)
+EventLoop::EventLoop(size_t request_queue_size) : submission_queue(request_queue_size)
 {
 }
 
@@ -56,16 +54,16 @@ void EventLoop::run()
 	using namespace elio::uring;
 
 	while (should_continue) {
-		SubmitStatus submit_status = active_requests.submit(std::chrono::milliseconds(100));
+		SubmitStatus submit_status = submission_queue.submit(std::chrono::milliseconds(100));
 
-		if (active_requests.shouldContinueSubmitting(submit_status))
+		if (submission_queue.shouldContinueSubmitting(submit_status))
 			continue;
 		else if (submit_status < 0) {
 			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
 			continue;
 		}
 
-		active_requests.forEachCompletion([](Completion cqe) {
+		submission_queue.forEachCompletion([](Completion cqe) {
 			if (!cqe->user_data) {
 				std::cerr << "Error: Malformed completion queue entry" << std::endl;
 				return;
@@ -114,13 +112,6 @@ void EventLoop::run()
 	}
 }
 
-inline uring::RequestHeader EventLoop::getIssuingRequestHeader(Completion cqe)
-{
-	uring::RequestHeader request;
-	std::memcpy(&request, io_uring_cqe_get_data(cqe), sizeof(request));
-	return request;
-}
-
 template <class Request>
 inline const Request *EventLoop::getIssuingRequest(Completion cqe)
 {
@@ -146,7 +137,8 @@ template <class Request>
 uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
 {
 	request.header.user_data = static_cast<void *>(&subscriber);
-	return active_requests.prepare(request);
+	submission_queue.push(request);
+	return uring::AddRequestStatus::OK;
 }
 
 template <class Stream>
@@ -159,23 +151,16 @@ void EventLoop::logIssuingRequest(Completion cqe, Stream &stream)
 
 	switch (header->op) {
 	case Operation::ACCEPT: {
-		auto request = getIssuingRequest<uring::AcceptRequest>(cqe);
-		stream << "accept request for listening socket " << request->listening_socket_fd;
+		stream << *getIssuingRequest<uring::AcceptRequest>(cqe);
 	} break;
 	case Operation::READ: {
-		auto request = getIssuingRequest<uring::ReadRequest>(cqe);
-		stream << "read request of " << request->bytes_read.size() << " bytes for socket " << request->fd;
-
+		stream << *getIssuingRequest<uring::ReadRequest>(cqe);
 	} break;
 	case Operation::WRITE: {
-		auto request = getIssuingRequest<uring::WriteRequest>(cqe);
-		stream << "write request of " << request->bytes_written.size() << " bytes for socket " << request->fd;
-
+		stream << *getIssuingRequest<uring::WriteRequest>(cqe);
 	} break;
 	case Operation::CONNECT: {
-		auto request = getIssuingRequest<uring::ConnectRequest>(cqe);
-		stream << "connect request for socket " << request->socket_fd;
-
+		stream << *getIssuingRequest<uring::ConnectRequest>(cqe);
 	} break;
 	default:
 		stream << "malformed completion queue entry" << std::endl;
