@@ -14,12 +14,20 @@
 namespace elio::uring
 {
 
-enum class Operation : uint8_t { ACCEPT, CONNECT, READ, WRITE };
-struct RequestHeader {
-	explicit RequestHeader(Operation op_) : op(op_){};
-	explicit RequestHeader() : op(Operation::ACCEPT){};
+enum class Operation : uint32_t { ACCEPT = 0xA1A1A1A1, CONNECT = 0xB2B2B2B2, READ = 0xC3C3C3C3, WRITE = 0xD4D4D4D4 };
+
+struct alignas(4) RequestHeader {
+	static constexpr uint32_t MAGIC_VALUE = 0xA1B2C3D4;
+	uint32_t magic = MAGIC_VALUE;
 	Operation op;
 	void *user_data = nullptr;
+
+	explicit RequestHeader(Operation op_) : op(op_){};
+	explicit RequestHeader() : op(Operation::ACCEPT){};
+	inline bool valid() const
+	{
+		return magic == MAGIC_VALUE;
+	}
 };
 static_assert(sizeof(RequestHeader) == 16);
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<RequestHeader>);

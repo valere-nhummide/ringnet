@@ -69,6 +69,12 @@ void EventLoop::run()
 				return;
 			}
 			uring::RequestHeader *header = reinterpret_cast<uring::RequestHeader *>(cqe->user_data);
+
+			if (!header->valid()) {
+				std::cerr << "Error: Invalid request header" << std::endl;
+				return;
+			}
+
 			Subscriber *subscriber = getAssociatedSubscriber(*header);
 
 			if (!subscriber) {
