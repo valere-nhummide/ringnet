@@ -7,7 +7,7 @@
 #include "elio/eventHandler.hpp"
 #include "elio/events.hpp"
 #include "elio/status.hpp"
-#include "elio/uring/request.hpp"
+#include "elio/uring/requests.hpp"
 #include "elio/uring/submissionQueue.hpp"
 
 namespace elio
