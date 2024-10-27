@@ -8,9 +8,9 @@
 
 #include <liburing.h>
 
-#include "elio/subscriber.hpp"
 #include "elio/traits/movable.hpp"
 #include "elio/traits/reinterpretable.hpp"
+
 namespace elio::uring
 {
 

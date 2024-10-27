@@ -4,14 +4,18 @@
 #include <cassert>
 #include <iostream>
 
+#include "elio/eventHandler.hpp"
 #include "elio/events.hpp"
 #include "elio/status.hpp"
-#include "elio/subscriber.hpp"
 #include "elio/uring/request.hpp"
 #include "elio/uring/submissionQueue.hpp"
 
 namespace elio
 {
+
+using Subscriber = EventHandler<events::ErrorEvent, events::AcceptEvent, events::ReadEvent, events::WriteEvent,
+				events::ConnectEvent>;
+
 class EventLoop {
     public:
 	EventLoop(size_t request_queue_size);

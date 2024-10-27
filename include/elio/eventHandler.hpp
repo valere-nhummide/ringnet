@@ -5,25 +5,20 @@
 
 #include "elio/traits/movable.hpp"
 
-/// @todo Should be removed, and use variadic template
-#include "elio/events.hpp"
-
 namespace elio
 {
-/// @brief Do not move a subscriber: its address is associated to requests submitted to the kernel, in order to
+/// @brief Do not move an EventHandler: its address is associated to requests submitted to the kernel, in order to
 /// invoke one of its handlers on request completion. Hence, the address must remain untouched between submission and
 /// completion.
-class Subscriber : public traits::NonMovable {
+template <class... Events>
+class EventHandler : public traits::NonMovable {
     public:
-	Subscriber() = default;
+	EventHandler() = default;
 
 	template <class Event>
 	using Callback = std::function<void(Event &&)>;
 
-	/// @todo Make this a variadic template
-	std::tuple<Callback<events::ErrorEvent>, Callback<events::AcceptEvent>, Callback<events::ReadEvent>,
-		   Callback<events::WriteEvent>, Callback<events::ConnectEvent>>
-		handlers{};
+	std::tuple<Callback<Events>...> handlers{};
 
 	template <class Event>
 	auto handle(Event &&data) noexcept
