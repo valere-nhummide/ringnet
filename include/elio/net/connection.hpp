@@ -13,6 +13,7 @@
 #include "elio/net/endpoint.hpp"
 #include "elio/net/sockets.hpp"
 #include "elio/status.hpp"
+#include "elio/uring/bufferRing.hpp"
 #include "elio/uring/requests.hpp"
 
 namespace elio::net
@@ -53,7 +54,8 @@ class Connection {
 	/// neither the subscriber, which holds the handles, nor the requests themselves, nor any associated buffer.
 	/// Using smart pointers ensures that their address maintains valid when moving the Connection object around.
 	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
-	std::unique_ptr<elio::uring::ReadRequest> read_request = std::make_unique<elio::uring::ReadRequest>();
+	std::unique_ptr<elio::uring::MultiShotReadRequest> read_request =
+		std::make_unique<elio::uring::MultiShotReadRequest>();
 	std::unique_ptr<elio::uring::WriteRequest> write_request = std::make_unique<elio::uring::WriteRequest>();
 
 	using Buffer = std::array<std::byte, 2048>;
@@ -86,7 +88,6 @@ void Connection::onWrite(Func &&callback)
 MessagedStatus Connection::asyncRead()
 {
 	read_request->fd = socket.fd;
-	read_request->bytes_read = *reception_buffer;
 	uring::AddRequestStatus status = loop.get().add(*read_request, *subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };

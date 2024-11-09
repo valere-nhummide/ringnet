@@ -57,9 +57,9 @@ ListenStatus listen(Socket &socket, size_t max_pending_requests = std::numeric_l
 template <auto StrError, bool USE_ERRNO>
 struct FileDescriptorStatus {
 	static constexpr int SUCCESS = 0;
-	explicit FileDescriptorStatus() : return_code(SUCCESS){};
+	explicit FileDescriptorStatus() : return_code(SUCCESS) {};
 
-	explicit FileDescriptorStatus(int return_code_) : return_code(USE_ERRNO ? errno : return_code_){};
+	explicit FileDescriptorStatus(int return_code_) : return_code(USE_ERRNO ? errno : return_code_) {};
 
 	inline operator bool() const
 	{

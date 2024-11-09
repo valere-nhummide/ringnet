@@ -27,7 +27,7 @@ enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_RE
 /// 3. Submit them, by batch (io_uring_submit*)
 /// 4. Handle their corresponding completion entries (io_uring_for_each_cqe)
 class SubmissionQueue {
-	RefContainer<AcceptRequest, ConnectRequest, ReadRequest, WriteRequest> pending_requests{};
+	RefContainer<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest> pending_requests{};
 
     public:
 	explicit SubmissionQueue(size_t queue_size);
@@ -50,11 +50,14 @@ class SubmissionQueue {
 	template <class UnaryFunc>
 	void forEachCompletion(UnaryFunc &&function);
 
+	io_uring &getRing();
+
     private:
 	void preparePendingRequests();
 	AddRequestStatus prepare(const AcceptRequest &request);
 	AddRequestStatus prepare(const ConnectRequest &request);
 	AddRequestStatus prepare(const ReadRequest &request);
+	AddRequestStatus prepare(const MultiShotReadRequest &request);
 	AddRequestStatus prepare(const WriteRequest &request);
 	std::mutex pending_requests_mutex{};
 
@@ -81,6 +84,11 @@ SubmissionQueue::SubmissionQueue(size_t queue_size)
 SubmissionQueue::~SubmissionQueue()
 {
 	io_uring_queue_exit(&ring);
+}
+
+io_uring &SubmissionQueue::getRing()
+{
+	return ring;
 }
 
 void SubmissionQueue::preparePendingRequests()
@@ -172,7 +180,22 @@ AddRequestStatus SubmissionQueue::prepare(const ReadRequest &request)
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_read(sqe, request.fd, request.bytes_read.data(), request.bytes_read.size(), 0);
+	io_uring_prep_read(sqe, request.fd, request.reception_buffer.data(), request.reception_buffer.size(), 0);
+	io_uring_sqe_set_data(sqe, (void *)(&request));
+	return OK;
+}
+
+AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest &request)
+{
+	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
+
+	if (!sqe)
+		return QUEUE_FULL;
+
+	sqe->flags |= IOSQE_BUFFER_SELECT;
+	sqe->buf_group = request.buffer_group_id;
+
+	io_uring_prep_read_multishot(sqe, request.fd, 0, 0, request.buffer_group_id);
 	io_uring_sqe_set_data(sqe, (void *)(&request));
 	return OK;
 }

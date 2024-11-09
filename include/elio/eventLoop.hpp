@@ -7,6 +7,7 @@
 #include "elio/eventHandler.hpp"
 #include "elio/events.hpp"
 #include "elio/status.hpp"
+#include "elio/uring/bufferRing.hpp"
 #include "elio/uring/requests.hpp"
 #include "elio/uring/submissionQueue.hpp"
 
@@ -36,6 +37,9 @@ class EventLoop {
 
     private:
 	elio::uring::SubmissionQueue submission_queue;
+	using Buffer = std::array<std::byte, 2048>;
+	std::array<Buffer, 128> buffers{};
+	elio::uring::BufferRing<Buffer> buffer_ring;
 	std::atomic_bool should_continue{ true };
 
 	using Completion = const io_uring_cqe *;
@@ -49,7 +53,8 @@ class EventLoop {
 	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
 
-EventLoop::EventLoop(size_t request_queue_size) : submission_queue(request_queue_size)
+EventLoop::EventLoop(size_t request_queue_size)
+	: submission_queue(request_queue_size), buffer_ring(submission_queue.getRing(), buffers)
 {
 }
 
@@ -67,7 +72,7 @@ void EventLoop::run()
 			continue;
 		}
 
-		submission_queue.forEachCompletion([](Completion cqe) {
+		submission_queue.forEachCompletion([this](Completion cqe) {
 			if (!cqe->user_data) {
 				std::cerr << "Error: Malformed completion queue entry" << std::endl;
 				return;
@@ -99,11 +104,28 @@ void EventLoop::run()
 			} break;
 			case Operation::READ: {
 				auto request = getIssuingRequest<uring::ReadRequest>(cqe);
+
 				// The result holds the number of bytes read.
-				assert(static_cast<int>(request->bytes_read.size()) >= cqe->res);
+				assert(static_cast<int>(request->reception_buffer.size()) >= cqe->res);
 				assert(cqe->res >= 0);
 				subscriber->handle(events::ReadEvent{
-					.fd = request->fd, .bytes_read = request->bytes_read.subspan(0, cqe->res) });
+					.fd = request->fd,
+					.bytes_read = request->reception_buffer.subspan(0, cqe->res) });
+
+			} break;
+			case Operation::READ_MULTISHOT: {
+				auto request = getIssuingRequest<uring::MultiShotReadRequest>(cqe);
+				// The result holds the number of bytes read.
+				assert(cqe->res >= 0);
+
+				auto buffer_view = buffer_ring.get(cqe);
+				if (!buffer_view.has_value()) {
+					std::cerr << "Error: Invalid buffer ID" << std::endl;
+					break;
+				}
+				subscriber->handle(events::ReadEvent{
+					.fd = request->fd, .bytes_read = buffer_view->subspan(0, cqe->res) });
+				buffer_ring.release(cqe);
 			} break;
 			case Operation::WRITE: {
 				auto request = getIssuingRequest<uring::WriteRequest>(cqe);
@@ -146,6 +168,9 @@ void EventLoop::stop()
 template <class Request>
 uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
 {
+	if constexpr (std::is_same_v<Request, uring::MultiShotReadRequest>)
+		request.buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
+
 	request.header.user_data = static_cast<void *>(&subscriber);
 	submission_queue.push(request);
 	return uring::AddRequestStatus::OK;
@@ -165,6 +190,9 @@ void EventLoop::logIssuingRequest(Completion cqe, Stream &stream)
 	} break;
 	case Operation::READ: {
 		stream << *getIssuingRequest<uring::ReadRequest>(cqe);
+	} break;
+	case Operation::READ_MULTISHOT: {
+		stream << *getIssuingRequest<uring::MultiShotReadRequest>(cqe);
 	} break;
 	case Operation::WRITE: {
 		stream << *getIssuingRequest<uring::WriteRequest>(cqe);
