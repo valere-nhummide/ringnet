@@ -40,8 +40,8 @@ class Acceptor {
 
     private:
 	elio::EventLoop &loop;
-	elio::uring::AcceptRequest accept_request{};
-	elio::Subscriber subscriber{};
+	std::unique_ptr<elio::uring::AcceptRequest> accept_request = std::make_unique<elio::uring::AcceptRequest>();
+	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
 
 	std::atomic<Status> status = Status::NOT_LISTENING;
 	size_t max_connections;
@@ -59,14 +59,14 @@ template <DatagramProtocol DP>
 template <class Func>
 void Acceptor<DP>::onError(Func &&user_callback)
 {
-	subscriber.on<elio::events::ErrorEvent>(std::move(user_callback));
+	subscriber->on<elio::events::ErrorEvent>(std::move(user_callback));
 }
 
 template <DatagramProtocol DP>
 template <class Func>
 void Acceptor<DP>::onNewConnection(Func user_callback)
 {
-	subscriber.on<elio::events::AcceptEvent>([this, user_callback](const elio::events::AcceptEvent &event) {
+	subscriber->on<elio::events::AcceptEvent>([this, user_callback](const elio::events::AcceptEvent &event) {
 		user_callback(Connection{ loop, Socket{ event.client_fd } });
 	});
 }
@@ -102,8 +102,8 @@ MessagedStatus Acceptor<DP>::listen(std::string_view listening_address, uint16_t
 		return MessagedStatus{ false, "Error listening to " + std::string(listening_address) + ":" +
 						      std::to_string(listening_port) + ": " + socket_status.what() };
 
-	accept_request.listening_socket_fd = listening_socket.fd;
-	auto uring_status = loop.add(accept_request, subscriber);
+	accept_request->listening_socket_fd = listening_socket.fd;
+	auto uring_status = loop.add(*accept_request, *subscriber);
 	if (uring_status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

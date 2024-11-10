@@ -8,11 +8,11 @@
 
 #include <liburing.h>
 
-#include "elio/traits/movable.hpp"
 #include "elio/traits/reinterpretable.hpp"
 
 namespace elio::uring
 {
+inline constexpr uint32_t HEADER_MAGIC_VALUE = 0xA1B2C3D4;
 
 enum class Operation : uint32_t {
 	ACCEPT = 0xA1A1A1A1,
@@ -22,9 +22,8 @@ enum class Operation : uint32_t {
 	WRITE = 0xE5E5E5E5
 };
 
-struct alignas(4) RequestHeader {
-	static constexpr uint32_t MAGIC_VALUE = 0xA1B2C3D4;
-	uint32_t magic = MAGIC_VALUE;
+struct RequestHeader {
+	uint32_t magic = HEADER_MAGIC_VALUE;
 	Operation op;
 	void *user_data = nullptr;
 
@@ -32,19 +31,19 @@ struct alignas(4) RequestHeader {
 	explicit RequestHeader() : op(Operation::ACCEPT) {};
 	inline bool valid() const
 	{
-		return magic == MAGIC_VALUE;
+		return magic == HEADER_MAGIC_VALUE;
 	}
 };
 static_assert(sizeof(RequestHeader) == 16);
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<RequestHeader>);
 
-struct AcceptRequest : public elio::traits::NonMovable {
+struct AcceptRequest {
 	RequestHeader header{ Operation::ACCEPT };
 	int listening_socket_fd = -1;
 };
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<AcceptRequest>);
 
-struct ConnectRequest : public elio::traits::NonMovable {
+struct ConnectRequest {
 	RequestHeader header{ Operation::CONNECT };
 	int socket_fd = -1;
 	const sockaddr *addr = nullptr;
@@ -58,7 +57,7 @@ static_assert(elio::traits::is_safe_for_reinterpret_cast_v<ConnectRequest>);
 /// rather than upfront
 
 /// @brief Single-shot read request, with a reception buffer specified upfront. Needs to be renewed once completed.
-struct ReadRequest : public elio::traits::NonMovable {
+struct ReadRequest {
 	RequestHeader header{ Operation::READ };
 	int fd = -1;
 	std::span<std::byte> reception_buffer{};
@@ -66,14 +65,14 @@ struct ReadRequest : public elio::traits::NonMovable {
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<ReadRequest>);
 
 /// @brief Multi-shot read request. Induces the use of provided buffers.
-struct MultiShotReadRequest : public elio::traits::NonMovable {
+struct MultiShotReadRequest {
 	RequestHeader header{ Operation::READ_MULTISHOT };
 	int fd = -1;
 	uint16_t buffer_group_id = -1;
 };
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<MultiShotReadRequest>);
 
-struct WriteRequest : public elio::traits::NonMovable {
+struct WriteRequest {
 	RequestHeader header{ Operation::WRITE };
 	int fd = -1;
 	std::span<std::byte> bytes_written{};

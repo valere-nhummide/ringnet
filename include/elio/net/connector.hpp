@@ -45,8 +45,8 @@ class Connector {
 
     private:
 	elio::EventLoop &loop;
-	elio::uring::ConnectRequest connect_request{};
-	elio::Subscriber subscriber{};
+	std::unique_ptr<elio::uring::ConnectRequest> connect_request = std::make_unique<elio::uring::ConnectRequest>();
+	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
 
 	std::atomic<Connector<DP>::Status> connection_status = Connector<DP>::Status::DISCONNECTED;
 	std::mutex connection_mutex{};
@@ -65,14 +65,14 @@ template <DatagramProtocol DP>
 template <class Func>
 void Connector<DP>::onError(Func &&callback)
 {
-	subscriber.on<elio::events::ErrorEvent>(std::move(callback));
+	subscriber->on<elio::events::ErrorEvent>(std::move(callback));
 }
 
 template <DatagramProtocol DP>
 template <class Func>
 void Connector<DP>::onConnection(Func user_callback)
 {
-	subscriber.on<elio::events::ConnectEvent>([this, user_callback](const elio::events::ConnectEvent &) {
+	subscriber->on<elio::events::ConnectEvent>([this, user_callback](const elio::events::ConnectEvent &) {
 		user_callback(Connection{ loop, std::move(socket) });
 		std::lock_guard<std::mutex> lock{ connection_mutex };
 		connection_status = Status::CONNECTED;
@@ -101,10 +101,10 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 						      std::string(server_address) + ":" + std::to_string(server_port) +
 						      ": " + socket_status.what() };
 
-	connect_request.socket_fd = socket.fd;
-	std::tie(connect_request.addr, connect_request.addrlen) = resolved_address->as_sockaddr();
+	connect_request->socket_fd = socket.fd;
+	std::tie(connect_request->addr, connect_request->addrlen) = resolved_address->as_sockaddr();
 
-	auto status = loop.add(connect_request, subscriber);
+	auto status = loop.add(*connect_request, *subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 
