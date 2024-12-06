@@ -21,20 +21,20 @@ enum AddRequestStatus { OK = 0, QUEUE_FULL };
 enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_READY = -EAGAIN };
 
 /// @brief Wrapper around the io_uring submission/completion queues.
-/// The caller adds requests:
-/// 1. Push them to a waiting list of pending requests.
-/// 2. Prepare the pending requests (io_uring_prep*)
-/// 3. Submit them, by batch (io_uring_submit*)
-/// 4. Handle their corresponding completion entries (io_uring_for_each_cqe)
+/// When the he caller adds requests, it goes through the following cycles:
+/// 1. Pushed to a waiting list of pending requests.
+/// 2. On next loop iteration, prepared (io_uring_prep*)
+/// 3. Submitted, by batch (io_uring_submit*)
+/// 4. The corresponding completion entry is processed (io_uring_for_each_cqe)
 class SubmissionQueue {
-	RefContainer<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest> pending_requests{};
+	PointersTuple<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest> pending_requests{};
 
     public:
 	explicit SubmissionQueue(size_t queue_size);
 	~SubmissionQueue();
 
 	template <class Request>
-	void push(const Request &request)
+	void push(const Request *request)
 	{
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
 		pending_requests.push(request);
@@ -54,11 +54,11 @@ class SubmissionQueue {
 
     private:
 	void preparePendingRequests();
-	AddRequestStatus prepare(const AcceptRequest &request);
-	AddRequestStatus prepare(const ConnectRequest &request);
-	AddRequestStatus prepare(const ReadRequest &request);
-	AddRequestStatus prepare(const MultiShotReadRequest &request);
-	AddRequestStatus prepare(const WriteRequest &request);
+	AddRequestStatus prepare(const AcceptRequest *request);
+	AddRequestStatus prepare(const ConnectRequest *request);
+	AddRequestStatus prepare(const ReadRequest *request);
+	AddRequestStatus prepare(const MultiShotReadRequest *request);
+	AddRequestStatus prepare(const WriteRequest *request);
 	std::mutex pending_requests_mutex{};
 
 	io_uring ring{};
@@ -137,55 +137,55 @@ void SubmissionQueue::forEachCompletion(UnaryFunc &&function)
 		io_uring_cq_advance(&ring, processed);
 }
 
-AddRequestStatus SubmissionQueue::prepare(const AcceptRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const AcceptRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_multishot_accept(sqe, request.listening_socket_fd, nullptr, nullptr, 0);
-	io_uring_sqe_set_data(sqe, (void *)(&request));
+	io_uring_prep_multishot_accept(sqe, request->listening_socket_fd, nullptr, nullptr, 0);
+	io_uring_sqe_set_data(sqe, (void *)(request));
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ConnectRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const ConnectRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_connect(sqe, request.socket_fd, request.addr, request.addrlen);
-	io_uring_sqe_set_data(sqe, (void *)(&request));
+	io_uring_prep_connect(sqe, request->socket_fd, request->addr, request->addrlen);
+	io_uring_sqe_set_data(sqe, (void *)(request));
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const WriteRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const WriteRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_write(sqe, request.fd, request.bytes_written.data(), request.bytes_written.size(), 0);
-	io_uring_sqe_set_data(sqe, (void *)(&request));
+	io_uring_prep_write(sqe, request->fd, request->bytes_written.data(), request->bytes_written.size(), 0);
+	io_uring_sqe_set_data(sqe, (void *)(request));
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ReadRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const ReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
 	if (!sqe)
 		return QUEUE_FULL;
 
-	io_uring_prep_read(sqe, request.fd, request.reception_buffer.data(), request.reception_buffer.size(), 0);
-	io_uring_sqe_set_data(sqe, (void *)(&request));
+	io_uring_prep_read(sqe, request->fd, request->reception_buffer.data(), request->reception_buffer.size(), 0);
+	io_uring_sqe_set_data(sqe, (void *)(request));
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest &request)
+AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -193,10 +193,10 @@ AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest &request)
 		return QUEUE_FULL;
 
 	sqe->flags |= IOSQE_BUFFER_SELECT;
-	sqe->buf_group = request.buffer_group_id;
+	sqe->buf_group = request->buffer_group_id;
 
-	io_uring_prep_read_multishot(sqe, request.fd, 0, 0, request.buffer_group_id);
-	io_uring_sqe_set_data(sqe, (void *)(&request));
+	io_uring_prep_read_multishot(sqe, request->fd, 0, 0, request->buffer_group_id);
+	io_uring_sqe_set_data(sqe, (void *)(request));
 	return OK;
 }
 

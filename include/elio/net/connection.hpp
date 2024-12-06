@@ -57,9 +57,6 @@ class Connection {
 	std::unique_ptr<elio::uring::MultiShotReadRequest> read_request =
 		std::make_unique<elio::uring::MultiShotReadRequest>();
 	std::unique_ptr<elio::uring::WriteRequest> write_request = std::make_unique<elio::uring::WriteRequest>();
-
-	using Buffer = std::array<std::byte, 2048>;
-	std::unique_ptr<Buffer> reception_buffer = std::make_unique<Buffer>();
 };
 
 Connection::Connection(elio::EventLoop &loop_, Socket &&socket_)
@@ -88,7 +85,7 @@ void Connection::onWrite(Func &&callback)
 MessagedStatus Connection::asyncRead()
 {
 	read_request->fd = socket.fd;
-	uring::AddRequestStatus status = loop.get().add(*read_request, *subscriber);
+	uring::AddRequestStatus status = loop.get().add(read_request.get(), subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 
@@ -99,7 +96,7 @@ MessagedStatus Connection::asyncWrite(std::span<std::byte> sent_bytes)
 {
 	write_request->fd = socket.fd;
 	write_request->bytes_written = sent_bytes;
-	uring::AddRequestStatus status = loop.get().add(*write_request, *subscriber);
+	uring::AddRequestStatus status = loop.get().add(write_request.get(), subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

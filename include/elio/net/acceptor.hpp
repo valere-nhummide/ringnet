@@ -103,7 +103,7 @@ MessagedStatus Acceptor<DP>::listen(std::string_view listening_address, uint16_t
 						      std::to_string(listening_port) + ": " + socket_status.what() };
 
 	accept_request->listening_socket_fd = listening_socket.fd;
-	auto uring_status = loop.add(*accept_request, *subscriber);
+	auto uring_status = loop.add(accept_request.get(), subscriber.get());
 	if (uring_status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

@@ -1,11 +1,13 @@
-#include "elio/uring/submissionQueue.hpp"
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include <liburing.h>
+
+#include "elio/status.hpp"
 
 namespace elio::uring
 {
@@ -21,17 +23,35 @@ class BufferRing {
 
     public:
 	static constexpr int BUFFER_GROUP_ID = 1;
-	BufferRing(io_uring &io_ring_, std::span<Buffer> buffers_) : io_ring(std::ref(io_ring_)), buffers(buffers_)
+	BufferRing(io_uring &io_ring_) : io_ring(std::ref(io_ring_))
 	{
+	}
+
+	MessagedStatus setupBuffers(std::span<Buffer> buffers_)
+	{
+		if (!isPowerOfTwo(buffers_.size()))
+			return MessagedStatus{ false, "The number of entries must be a power of two" };
+
+		if (buffer_ring)
+			io_uring_free_buf_ring(&(io_ring.get()), buffer_ring, buffers.size(), BUFFER_GROUP_ID);
+
+		buffers = buffers_;
+
 		int status{};
-		buffer_ring = io_uring_setup_buf_ring(&io_ring_, buffers.size(), BUFFER_GROUP_ID, FLAGS, &status);
+		buffer_ring =
+			io_uring_setup_buf_ring(&(io_ring.get()), buffers.size(), BUFFER_GROUP_ID, FLAGS, &status);
+
+		if (!buffer_ring)
+			return MessagedStatus{ false, strerror(-status) };
 
 		for (size_t buffer_id = 0; buffer_id < buffers.size(); buffer_id++) {
 			Buffer &buffer = buffers[buffer_id];
 			io_uring_buf_ring_add(buffer_ring, buffer.data(), buffer.size(), buffer_id,
-					      io_uring_buf_ring_mask(buffers.size()), 0);
+					      io_uring_buf_ring_mask(buffers.size()), buffer_id);
 		}
 		io_uring_buf_ring_advance(buffer_ring, buffers.size());
+
+		return MessagedStatus{ true, "Buffers added" };
 	}
 
 	BufferRing(const BufferRing &) = delete;
@@ -69,6 +89,11 @@ class BufferRing {
     private:
 	std::reference_wrapper<io_uring> io_ring;
 	io_uring_buf_ring *buffer_ring = nullptr;
-	std::span<Buffer> buffers;
+	std::span<Buffer> buffers{};
+
+	inline bool isPowerOfTwo(size_t n)
+	{
+		return ((n & (n - 1)) == 0);
+	}
 };
 } // namespace elio::uring

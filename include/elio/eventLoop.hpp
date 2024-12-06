@@ -33,7 +33,7 @@ class EventLoop {
 	/// @return Cf. enumerate
 	/// @warning The duration of both the request and the subscriber must outlive the completion.
 	template <class Request>
-	uring::AddRequestStatus add(Request &request, Subscriber &subscriber);
+	uring::AddRequestStatus add(Request *request, Subscriber *subscriber);
 
     private:
 	elio::uring::SubmissionQueue submission_queue;
@@ -45,17 +45,20 @@ class EventLoop {
 	using Completion = const io_uring_cqe *;
 
 	template <class Request>
-	inline static const Request *getIssuingRequest(Completion cqe);
+	inline static Request *getIssuingRequest(Completion cqe);
 
-	inline static Subscriber *getAssociatedSubscriber(const uring::RequestHeader &header);
+	inline static Subscriber *getAssociatedSubscriber(const uring::RequestHeader *header);
 
 	template <class Stream = std::ostream>
 	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
 
 EventLoop::EventLoop(size_t request_queue_size)
-	: submission_queue(request_queue_size), buffer_ring(submission_queue.getRing(), buffers)
+	: submission_queue(request_queue_size), buffer_ring(submission_queue.getRing())
 {
+	MessagedStatus status = buffer_ring.setupBuffers(buffers);
+	if (!status)
+		std::cerr << status.what();
 }
 
 void EventLoop::run()
@@ -77,14 +80,14 @@ void EventLoop::run()
 				std::cerr << "Error: Malformed completion queue entry" << std::endl;
 				return;
 			}
-			uring::RequestHeader *header = reinterpret_cast<uring::RequestHeader *>(cqe->user_data);
 
+			const uring::RequestHeader *header = reinterpret_cast<const RequestHeader *>(cqe->user_data);
 			if (!header->valid()) {
 				std::cerr << "Error: Invalid request header" << std::endl;
 				return;
 			}
 
-			Subscriber *subscriber = getAssociatedSubscriber(*header);
+			Subscriber *subscriber = getAssociatedSubscriber(header);
 
 			if (!subscriber) {
 				std::cerr << "Error: No subscriber" << std::endl;
@@ -145,14 +148,14 @@ void EventLoop::run()
 }
 
 template <class Request>
-inline const Request *EventLoop::getIssuingRequest(Completion cqe)
+inline Request *EventLoop::getIssuingRequest(Completion cqe)
 {
 	return reinterpret_cast<Request *>(cqe->user_data);
 }
 
-inline Subscriber *EventLoop::getAssociatedSubscriber(const uring::RequestHeader &header)
+inline Subscriber *EventLoop::getAssociatedSubscriber(const uring::RequestHeader *header)
 {
-	return static_cast<Subscriber *>(header.user_data);
+	return static_cast<Subscriber *>(header->user_data);
 }
 
 EventLoop::~EventLoop()
@@ -166,12 +169,12 @@ void EventLoop::stop()
 }
 
 template <class Request>
-uring::AddRequestStatus EventLoop::add(Request &request, Subscriber &subscriber)
+uring::AddRequestStatus EventLoop::add(Request *request, Subscriber *subscriber)
 {
 	if constexpr (std::is_same_v<Request, uring::MultiShotReadRequest>)
-		request.buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
+		request->buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
 
-	request.header.user_data = static_cast<void *>(&subscriber);
+	request->header.user_data = static_cast<void *>(subscriber);
 	submission_queue.push(request);
 	return uring::AddRequestStatus::OK;
 }

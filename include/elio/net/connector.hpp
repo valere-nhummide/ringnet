@@ -48,6 +48,8 @@ class Connector {
 	std::unique_ptr<elio::uring::ConnectRequest> connect_request = std::make_unique<elio::uring::ConnectRequest>();
 	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
 
+	elio::net::ResolvedAddress resolved_address{};
+
 	std::atomic<Connector<DP>::Status> connection_status = Connector<DP>::Status::DISCONNECTED;
 	std::mutex connection_mutex{};
 	std::condition_variable connection_cv{};
@@ -86,7 +88,7 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 	if (connection_status == Status::PENDING)
 		return MessagedStatus{ false, "Already pending connection" };
 
-	const auto resolved_address = elio::net::resolve(server_address, server_port, DP, true);
+	resolved_address = elio::net::resolve(server_address, server_port, DP, true);
 	if (!resolved_address)
 		return MessagedStatus{ false, "Error resolving address " + std::string(server_address) + ":" +
 						      std::to_string(server_port) + ": " +
@@ -104,7 +106,7 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 	connect_request->socket_fd = socket.fd;
 	std::tie(connect_request->addr, connect_request->addrlen) = resolved_address->as_sockaddr();
 
-	auto status = loop.add(*connect_request, *subscriber);
+	auto status = loop.add(connect_request.get(), subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

@@ -8,30 +8,32 @@ namespace elio::uring
 {
 
 template <typename... Ts>
-class RefContainer {
-	template <class T>
-	using References = std::vector<std::reference_wrapper<const T>>;
+class PointersTuple {
+	template <typename T>
+	using Pointers = std::vector<const T *>;
 
-	std::tuple<References<Ts>...> references{};
+	std::tuple<Pointers<Ts>...> tuple{};
 
     public:
 	template <class T>
-	void push(const T &item)
+	void push(const T *item)
 	{
-		std::get<References<T>>(references).push_back(std::cref(item));
+		std::get<Pointers<T>>(tuple).push_back(item);
 	}
 
 	void clear()
 	{
-		std::apply([](auto &&...elems) { ((elems.clear()), ...); }, references);
+		std::apply([](auto &&...elems) { ((elems.clear()), ...); }, tuple);
 	}
 
 	template <class UnaryFunc>
 	void for_each(UnaryFunc &&function)
 	{
-		std::apply([this,
-			    &function](auto &&...vecs) { ((std::for_each(vecs.begin(), vecs.end(), function)), ...); },
-			   references);
+		std::apply(
+			[&function](auto &&...pointers) {
+				((std::for_each(pointers.begin(), pointers.end(), function)), ...);
+			},
+			tuple);
 	}
 };
 

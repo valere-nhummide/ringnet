@@ -3,26 +3,33 @@
 #include <thread>
 
 #include "client.hpp"
+#include "commandLineInterface.h"
 #include "server.hpp"
 
-// tmp
 #include "elio/eventLoop.hpp"
 
 using namespace std::chrono_literals;
 
-int main(int, char *[])
+int main(int argc, char *argv[])
 {
+	CommandLineInterface cli(argc, argv);
+
+	const std::string_view address = cli.address();
+	const uint16_t port = cli.port();
+	const uint64_t bytes_count = cli.bytes_count();
+
 	elio::EventLoop loop(1024);
-	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
 
 	EchoServer server{ loop };
-	server.listen("127.0.0.1", 6789);
-	std::this_thread::sleep_for(1s);
+	server.listen(address, port);
 
-	EchoClient client{ loop };
-	client.connect("127.0.0.1", 6789);
-	client.send("Hello from client!");
+	EchoClient client{ loop, bytes_count };
+	client.connect(address, port);
 
-	std::this_thread::sleep_for(1s);
+	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
+	
+	client.waitForCompletion();
+	client.printResults();
+
 	loop.stop();
 }

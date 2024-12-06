@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <span>
@@ -11,82 +12,116 @@
 
 class EchoClient {
     public:
-	EchoClient(elio::EventLoop &loop);
+	EchoClient(elio::EventLoop &loop, size_t min_bytes_count);
 
 	void connect(std::string_view server_address, uint16_t server_port);
 	void send(std::string_view message);
 
-    private:
-	void registerCallbacks();
-	void onError(elio::events::ErrorEvent event);
-	void onCompletedRead(std::span<std::byte> bytes_read);
-	void onCompletedWrite(std::span<std::byte> bytes_written);
+	void waitForCompletion();
+	void printResults();
 
-	elio::EventLoop &loop;
+    private:
+	void onConnected();
+
+	elio::net::Connector<elio::net::TCP> connector;
+
 	std::optional<elio::net::Connection> connection{};
+
+	std::vector<std::byte> packet{ 1024, std::byte{ 'A' } };
+	size_t min_bytes_count;
+	size_t received_bytes_count = 0;
+
+	using clock_t = std::chrono::high_resolution_clock;
+	typename clock_t::time_point start{};
+	typename clock_t::time_point stop{};
+
+	std::mutex completion_mutex{};
+	std::condition_variable completion_cv{};
+	std::atomic_bool has_completed = false;
 };
 
-EchoClient::EchoClient(elio::EventLoop &loop_) : loop(loop_)
+EchoClient::EchoClient(elio::EventLoop &loop, size_t min_bytes_count_)
+	: connector(loop), min_bytes_count(min_bytes_count_)
 {
-}
-
-void EchoClient::send(std::string_view message)
-{
-	if (!connection)
-		throw std::runtime_error("Client: Cannot send when disconnected");
-
-	std::byte *message_view = reinterpret_cast<std::byte *>(const_cast<char *>(message.data()));
-	std::span<std::byte> as_bytes{ message_view, message.size() };
-	connection->asyncWrite(as_bytes);
 }
 
 void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
 
-	elio::net::Connector<elio::net::TCP> connector(loop);
-	connector.onError([this](elio::events::ErrorEvent &&event) { onError(event); });
+	connector.onError([](elio::events::ErrorEvent &&event) {
+		std::cerr << "Client: Error: " << event.what() << std::endl;
+		std::terminate();
+	});
+
 	connector.onConnection([this](elio::net::Connection &&accepted_connection) {
 		std::cout << "Client: Connected to " << accepted_connection.endpoint().fd << std::endl;
 		connection = std::move(accepted_connection);
-		registerCallbacks();
+		onConnected();
 	});
 
 	MessagedStatus request_status = connector.asyncConnect(server_address, server_port);
 
 	if (!request_status) {
-		std::stringstream builder;
-		builder << "Client: Could not connect to " << server_address << ":" << server_port << "..."
-			<< std::endl;
+		std::cerr << "Client: Could not connect to " << server_address << ":" << server_port << std::endl;
 		std::cerr << request_status.what() << std::endl;
-		throw std::runtime_error(builder.str());
+		std::terminate();
 	}
-
-	connector.waitForConnection();
 }
 
-void EchoClient::registerCallbacks()
+void EchoClient::onConnected()
 {
 	assert(connection);
 
-	connection->onError([this](elio::events::ErrorEvent &&event) { onError(event); });
+	connection->onError([](elio::events::ErrorEvent &&event) {
+		std::cerr << "Client: Error: " << event.what() << std::endl;
+		std::terminate();
+	});
 
-	connection->onRead([this](elio::events::ReadEvent &&event) { onCompletedRead(event.bytes_read); });
+	connection->onRead([this](elio::events::ReadEvent &&event) {
+		assert(event.bytes_read.size_bytes() == packet.size());
 
-	connection->onWrite([this](elio::events::WriteEvent &&event) { onCompletedWrite(event.bytes_written); });
+		received_bytes_count += event.bytes_read.size_bytes();
+		if (received_bytes_count < min_bytes_count)
+			connection->asyncWrite(packet);
+		else {
+			std::lock_guard<std::mutex> lock{ completion_mutex };
+			has_completed = true;
+			completion_cv.notify_all();
+		}
+	});
+	connection->asyncRead();
+	start = clock_t::now();
+	connection->asyncWrite(packet);
 }
 
-void EchoClient::onError(elio::events::ErrorEvent event)
+void EchoClient::printResults()
 {
-	std::cerr << "Error: " << event.what() << std::endl;
+	using namespace std::chrono;
+	stop = clock_t::now();
+	const nanoseconds elapsed = stop - start;
+
+	double byte_rate = static_cast<double>(received_bytes_count) * 2.0; // Rx + Tx
+	byte_rate /= 1'000'000.; // Byte -> MB
+	byte_rate *= nanoseconds::period::den; // s -> ns
+	byte_rate /= duration_cast<nanoseconds>(elapsed).count();
+
+	std::cout << "Exchanged " << received_bytes_count << " bytes in ";
+	if (elapsed.count() > seconds::period::den)
+		std::cout << duration_cast<seconds>(elapsed);
+	else if (elapsed.count() > milliseconds::period::den)
+		std::cout << duration_cast<milliseconds>(elapsed);
+	else if (elapsed.count() > microseconds::period::den)
+		std::cout << duration_cast<microseconds>(elapsed);
+	else
+		std::cout << elapsed;
+
+	std::cout << " (" << byte_rate << " MB/s)\n";
 }
 
-void EchoClient::onCompletedRead(std::span<std::byte> bytes_read)
+void EchoClient::waitForCompletion()
 {
-	std::cout << "Client: Received \"" << reinterpret_cast<char *>(bytes_read.data()) << "\"" << std::endl;
-}
-
-void EchoClient::onCompletedWrite(std::span<std::byte> bytes_written)
-{
-	std::cout << "Client: Sent \"" << reinterpret_cast<char *>(bytes_written.data()) << "\"" << std::endl;
+	std::unique_lock<std::mutex> lock{ completion_mutex };
+	while (!has_completed)
+		completion_cv.wait(lock, [this]() { return has_completed.load(); });
 }
