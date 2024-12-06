@@ -33,7 +33,7 @@ class EventLoop {
 	/// @return Cf. enumerate
 	/// @warning The duration of both the request and the subscriber must outlive the completion.
 	template <class Request>
-	uring::AddRequestStatus add(Request *request, Subscriber *subscriber);
+	uring::AddRequestStatus add(std::shared_ptr<Request> &request, const std::shared_ptr<Subscriber> &subscriber);
 
     private:
 	elio::uring::SubmissionQueue submission_queue;
@@ -169,12 +169,12 @@ void EventLoop::stop()
 }
 
 template <class Request>
-uring::AddRequestStatus EventLoop::add(Request *request, Subscriber *subscriber)
+uring::AddRequestStatus EventLoop::add(std::shared_ptr<Request> &request, const std::shared_ptr<Subscriber> &subscriber)
 {
 	if constexpr (std::is_same_v<Request, uring::MultiShotReadRequest>)
 		request->buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
 
-	request->header.user_data = static_cast<void *>(subscriber);
+	request->header.user_data = static_cast<void *>(subscriber.get());
 	submission_queue.push(request);
 	return uring::AddRequestStatus::OK;
 }

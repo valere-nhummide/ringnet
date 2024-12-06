@@ -45,8 +45,8 @@ class Connector {
 
     private:
 	elio::EventLoop &loop;
-	std::unique_ptr<elio::uring::ConnectRequest> connect_request = std::make_unique<elio::uring::ConnectRequest>();
-	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
+	std::shared_ptr<elio::uring::ConnectRequest> connect_request = std::make_shared<elio::uring::ConnectRequest>();
+	std::shared_ptr<elio::Subscriber> subscriber = std::make_shared<elio::Subscriber>();
 
 	elio::net::ResolvedAddress resolved_address{};
 
@@ -106,7 +106,7 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 	connect_request->socket_fd = socket.fd;
 	std::tie(connect_request->addr, connect_request->addrlen) = resolved_address->as_sockaddr();
 
-	auto status = loop.add(connect_request.get(), subscriber.get());
+	auto status = loop.add(connect_request, subscriber);
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

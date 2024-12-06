@@ -11,7 +11,7 @@
 #include <liburing.h>
 
 #include "elio/time/chronoUtils.hpp"
-#include "elio/uring/refContainer.hpp"
+#include "elio/uring/requestContainer.hpp"
 #include "elio/uring/requests.hpp"
 
 namespace elio::uring
@@ -27,14 +27,15 @@ enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_RE
 /// 3. Submitted, by batch (io_uring_submit*)
 /// 4. The corresponding completion entry is processed (io_uring_for_each_cqe)
 class SubmissionQueue {
-	PointersTuple<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest> pending_requests{};
+	RequestContainer<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest>
+		pending_requests{};
 
     public:
 	explicit SubmissionQueue(size_t queue_size);
 	~SubmissionQueue();
 
 	template <class Request>
-	void push(const Request *request)
+	void push(const std::shared_ptr<Request> request)
 	{
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
 		pending_requests.push(request);
@@ -94,7 +95,11 @@ io_uring &SubmissionQueue::getRing()
 void SubmissionQueue::preparePendingRequests()
 {
 	std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-	pending_requests.for_each([this](const auto &request) { prepare(request); });
+	pending_requests.cleanup();
+	pending_requests.for_each([this](const auto &request) {
+		if (auto valid_request = request.lock())
+			prepare(valid_request.get());
+	});
 	pending_requests.clear();
 }
 

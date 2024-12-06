@@ -40,8 +40,8 @@ class Acceptor {
 
     private:
 	elio::EventLoop &loop;
-	std::unique_ptr<elio::uring::AcceptRequest> accept_request = std::make_unique<elio::uring::AcceptRequest>();
-	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
+	std::shared_ptr<elio::uring::AcceptRequest> accept_request = std::make_shared<elio::uring::AcceptRequest>();
+	std::shared_ptr<elio::Subscriber> subscriber = std::make_shared<elio::Subscriber>();
 
 	std::atomic<Status> status = Status::NOT_LISTENING;
 	size_t max_connections;
@@ -103,7 +103,7 @@ MessagedStatus Acceptor<DP>::listen(std::string_view listening_address, uint16_t
 						      std::to_string(listening_port) + ": " + socket_status.what() };
 
 	accept_request->listening_socket_fd = listening_socket.fd;
-	auto uring_status = loop.add(accept_request.get(), subscriber.get());
+	auto uring_status = loop.add(accept_request, subscriber);
 	if (uring_status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 
