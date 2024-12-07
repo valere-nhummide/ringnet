@@ -27,8 +27,8 @@ struct RequestHeader {
 	Operation op;
 	void *user_data = nullptr;
 
-	explicit RequestHeader(Operation op_) : op(op_) {};
-	explicit RequestHeader() : op(Operation::ACCEPT) {};
+	explicit RequestHeader(Operation op_) : op(op_){};
+	explicit RequestHeader() : op(Operation::ACCEPT){};
 	inline bool valid() const
 	{
 		return magic == HEADER_MAGIC_VALUE;
