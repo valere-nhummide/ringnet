@@ -6,6 +6,17 @@ project(
   VERSION 0.1
   LANGUAGES CXX)
 
+# Determine whether this is a standalone project or included by other projects
+set(ELIO_STANDALONE_PROJECT OFF)
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+  set(ELIO_STANDALONE_PROJECT ON)
+endif()
+
+# Establish the project options
+option(ELIO_BUILD_SAMPLES "Set to ON to build sample"
+       ${ELIO_STANDALONE_PROJECT})
+option(ELIO_BUILD_TESTS "Set to ON to build tests" ${ELIO_STANDALONE_PROJECT})
+
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 add_link_options($<$<STREQUAL:"${CMAKE_BUILD_TYPE}","Debug">:-rdynamic>)
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O3")
@@ -34,5 +45,13 @@ add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(
   ${PROJECT_NAME} INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
                             $<INSTALL_INTERFACE:include>)
-target_link_libraries(${PROJECT_NAME} INTERFACE external::expected external::liburing)
-add_subdirectory(app)
+target_link_libraries(${PROJECT_NAME} INTERFACE external::expected
+                                                external::liburing)
+
+if(ELIO_BUILD_SAMPLES)
+  add_subdirectory(app/samples)
+endif()
+
+if(ELIO_BUILD_TESTS)
+  add_subdirectory(app/tests)
+endif()

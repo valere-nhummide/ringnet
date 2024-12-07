@@ -1,6 +1,11 @@
 include(ExternalProject)
 include(FetchContent)
 
+# Avoid warning about DOWNLOAD_EXTRACT_TIMESTAMP in CMake 3.24:
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 # ##############################################################################
 # cxxopts - Lightweight C++ option parser library.
 # ##############################################################################
@@ -33,7 +38,38 @@ FetchContent_MakeAvailable(cxxopts)
 add_library(external::cxxopts ALIAS cxxopts)
 
 # ##############################################################################
-# Liburing
+# doctest
+# ##############################################################################
+
+ExternalProject_Add(
+  doctest
+  PREFIX ${CMAKE_BINARY_DIR}/doctest
+  URL ${CMAKE_CURRENT_SOURCE_DIR}/archives/doctest-2.4.11.tar.gz
+  URL_HASH
+    SHA256=632ed2c05a7f53fa961381497bf8069093f0d6628c5f26286161fbd32a560186
+  UPDATE_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND ""
+  LOG_CONFIGURE ON
+  LOG_BUILD ON
+  LOG_MERGED_STDOUTERR ON
+  LOG_OUTPUT_ON_FAILURE ON)
+
+# Expose required variable (DOCTEST_INCLUDE_DIR) to parent scope
+ExternalProject_Get_Property(doctest source_dir)
+set(DOCTEST_INCLUDE_DIR
+    ${source_dir}/doctest
+    CACHE INTERNAL "Path to include folder for doctest")
+
+add_library(doctest_ INTERFACE)
+add_dependencies(doctest_ doctest::doctest)
+target_include_directories(doctest_ INTERFACE ${DOCTEST_INCLUDE_DIR})
+
+add_library(external::doctest ALIAS doctest_)
+
+# ##############################################################################
+# liburing
 # ##############################################################################
 
 ExternalProject_Add(
