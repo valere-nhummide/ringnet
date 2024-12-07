@@ -4,6 +4,7 @@
 #include <limits>
 
 #include "elio/eventLoop.hpp"
+#include "elio/net/connection.hpp"
 #include "elio/net/sockets.hpp"
 #include "elio/status.hpp"
 #include "elio/uring/requests.hpp"

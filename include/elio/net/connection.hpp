@@ -28,7 +28,7 @@ class Connection {
 	Connection(elio::EventLoop &loop, net::Socket &&socket);
 
 	MessagedStatus asyncRead();
-	MessagedStatus asyncWrite(std::span<std::byte> sent_bytes);
+	MessagedStatus asyncWrite(std::span<const std::byte> sent_bytes);
 
 	/// @todo Add concepts
 	template <class Func>
@@ -92,7 +92,7 @@ MessagedStatus Connection::asyncRead()
 	return MessagedStatus{ true, "Success" };
 }
 
-MessagedStatus Connection::asyncWrite(std::span<std::byte> sent_bytes)
+MessagedStatus Connection::asyncWrite(std::span<const std::byte> sent_bytes)
 {
 	write_request->fd = socket.fd;
 	write_request->bytes_written = sent_bytes;

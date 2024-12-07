@@ -75,7 +75,7 @@ static_assert(elio::traits::is_safe_for_reinterpret_cast_v<MultiShotReadRequest>
 struct WriteRequest {
 	RequestHeader header{ Operation::WRITE };
 	int fd = -1;
-	std::span<std::byte> bytes_written{};
+	std::span<const std::byte> bytes_written{};
 };
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<WriteRequest>);
 

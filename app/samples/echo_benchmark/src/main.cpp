@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
 	client.connect(address, port);
 
 	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
-	
+
 	client.waitForCompletion();
 	client.printResults();
 
