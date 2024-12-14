@@ -33,26 +33,26 @@ struct FileDescriptorStatus;
 
 /// @brief Thin RAII wrapper around a file descriptor.
 /// It stores the address once resolved.
-class Socket;
+class FileDescriptor;
 
 /// @brief Wrap the linux sockaddr_in or sockaddr_in6 in a variant and expose some utilities.
 struct SocketAddress;
 
 using SetOptionStatus = FileDescriptorStatus<strerror, true>;
-SetOptionStatus set_option(Socket &socket, int option, bool enable = true);
+SetOptionStatus set_option(FileDescriptor &socket, int option, bool enable = true);
 
 using ResolveStatus = FileDescriptorStatus<gai_strerror>;
 using ResolvedAddress = tl::expected<SocketAddress, ResolveStatus>;
 ResolvedAddress resolve(std::string_view hostname, uint16_t port, DatagramProtocol datagram_protocol, bool passive);
 
 using ConnectStatus = FileDescriptorStatus<strerror, true>;
-ConnectStatus connect(Socket &socket, const SocketAddress &address);
+ConnectStatus connect(FileDescriptor &socket, const SocketAddress &address);
 
 using BindStatus = FileDescriptorStatus<strerror, true>;
-BindStatus bind(Socket &socket, const SocketAddress &address);
+BindStatus bind(FileDescriptor &socket, const SocketAddress &address);
 
 using ListenStatus = FileDescriptorStatus<strerror, true>;
-ListenStatus listen(Socket &socket, size_t max_pending_requests = std::numeric_limits<int>::max());
+ListenStatus listen(FileDescriptor &socket, size_t max_pending_requests = std::numeric_limits<int>::max());
 
 template <auto StrError, bool USE_ERRNO>
 struct FileDescriptorStatus {
@@ -78,56 +78,56 @@ struct FileDescriptorStatus {
 	int return_code;
 };
 
-class Socket {
+class FileDescriptor {
     public:
-	using FileDescriptor = int;
-	FileDescriptor fd{ INVALID };
+	using Raw = int;
+	Raw fd{ INVALID };
 
-	Socket() = default;
-	Socket(FileDescriptor fd);
-	Socket(const Socket &) = delete;
-	Socket &operator=(const Socket &) = delete;
-	Socket(Socket &&);
-	Socket &operator=(Socket &&);
+	FileDescriptor() = default;
+	FileDescriptor(Raw fd);
+	FileDescriptor(const FileDescriptor &) = delete;
+	FileDescriptor &operator=(const FileDescriptor &) = delete;
+	FileDescriptor(FileDescriptor &&);
+	FileDescriptor &operator=(FileDescriptor &&);
 
-	~Socket();
+	~FileDescriptor();
 
-	inline explicit operator FileDescriptor() const;
+	inline explicit operator Raw() const;
 	inline explicit operator bool() const;
 
     private:
-	static constexpr FileDescriptor INVALID = -1;
+	static constexpr Raw INVALID = -1;
 };
 
-Socket::Socket(FileDescriptor fd_) : fd(fd_)
+FileDescriptor::FileDescriptor(Raw fd_) : fd(fd_)
 {
 }
 
-Socket::Socket(Socket &&other) : fd(other.fd)
+FileDescriptor::FileDescriptor(FileDescriptor &&other) : fd(other.fd)
 {
 	other.fd = INVALID;
 }
 
-Socket &Socket::operator=(Socket &&other)
+FileDescriptor &FileDescriptor::operator=(FileDescriptor &&other)
 {
 	using std::swap;
 	swap(fd, other.fd);
 	return *this;
 }
 
-Socket::~Socket()
+FileDescriptor::~FileDescriptor()
 {
 	if (fd > 0)
 		::close(fd);
 	fd = INVALID;
 }
 
-inline Socket::operator FileDescriptor() const
+inline FileDescriptor::operator Raw() const
 {
 	return fd;
 }
 
-inline Socket::operator bool() const
+inline FileDescriptor::operator bool() const
 {
 	return (fd > 0);
 }
@@ -158,7 +158,7 @@ inline std::optional<IPVersion> SocketAddress::ip_version() const
 	return std::nullopt;
 }
 
-SetOptionStatus set_option(Socket &socket, int option, bool enable)
+SetOptionStatus set_option(FileDescriptor &socket, int option, bool enable)
 {
 	int value = enable ? 1 : 0;
 	return SetOptionStatus{ ::setsockopt(socket.fd, SOL_SOCKET, option, &value, sizeof(value)) };
@@ -204,19 +204,19 @@ namespace detail
 
 } // namespace detail
 
-ConnectStatus connect(Socket &socket, const SocketAddress &address)
+ConnectStatus connect(FileDescriptor &socket, const SocketAddress &address)
 {
 	auto [addr, addrlen] = address.as_sockaddr();
 	return ConnectStatus{ ::connect(socket.fd, addr, addrlen) };
 }
 
-BindStatus bind(Socket &socket, const SocketAddress &address)
+BindStatus bind(FileDescriptor &socket, const SocketAddress &address)
 {
 	auto [addr, addrlen] = address.as_sockaddr();
 	return BindStatus{ ::bind(socket.fd, addr, addrlen) };
 }
 
-ListenStatus listen(Socket &socket, size_t max_pending_requests)
+ListenStatus listen(FileDescriptor &socket, size_t max_pending_requests)
 {
 	return ListenStatus{ ::listen(socket.fd, max_pending_requests) };
 }

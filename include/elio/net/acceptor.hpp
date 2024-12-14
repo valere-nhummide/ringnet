@@ -49,8 +49,8 @@ class Acceptor {
 	std::atomic<Status> status = Status::NOT_LISTENING;
 	size_t max_connections;
 
-	using Socket = elio::net::Socket;
-	Socket listening_socket{};
+	using FileDescriptor = elio::net::FileDescriptor;
+	FileDescriptor listening_socket{};
 };
 
 template <DatagramProtocol DP>
@@ -77,7 +77,7 @@ template <class Func>
 void Acceptor<DP>::onNewConnection(Func user_callback)
 {
 	subscriber->on<elio::events::AcceptEvent>([this, user_callback](const elio::events::AcceptEvent &event) {
-		user_callback(Connection{ loop, Socket{ event.client_fd } });
+		user_callback(Connection{ loop, FileDescriptor{ event.client_fd } });
 	});
 }
 

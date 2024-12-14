@@ -25,7 +25,7 @@ namespace elio::net
 /// In UDP, only address resolution is required to create a connection.
 class Connection {
     public:
-	Connection(elio::EventLoop &loop, net::Socket &&socket);
+	Connection(elio::EventLoop &loop, net::FileDescriptor &&socket);
 
 	Connection(Connection &&) = default;
 	Connection &operator=(Connection &&) = default;
@@ -50,8 +50,8 @@ class Connection {
     private:
 	std::reference_wrapper<elio::EventLoop> loop;
 
-	using Socket = elio::net::Socket;
-	Socket socket;
+	using FileDescriptor = elio::net::FileDescriptor;
+	FileDescriptor socket;
 
 	Endpoint endpoint_;
 
@@ -64,7 +64,7 @@ class Connection {
 	std::shared_ptr<elio::uring::WriteRequest> write_request = std::make_shared<elio::uring::WriteRequest>();
 };
 
-Connection::Connection(elio::EventLoop &loop_, Socket &&socket_)
+Connection::Connection(elio::EventLoop &loop_, FileDescriptor &&socket_)
 	: loop(std::ref(loop_)), socket(std::move(socket_)), endpoint_{ .fd = socket.fd }
 {
 }

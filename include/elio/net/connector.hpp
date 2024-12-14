@@ -56,8 +56,8 @@ class Connector {
 	std::mutex connection_mutex{};
 	std::condition_variable connection_cv{};
 
-	using Socket = elio::net::Socket;
-	Socket socket{};
+	using FileDescriptor = elio::net::FileDescriptor;
+	FileDescriptor socket{};
 };
 
 template <DatagramProtocol DP>
