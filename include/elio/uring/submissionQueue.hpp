@@ -35,10 +35,20 @@ class SubmissionQueue {
 	~SubmissionQueue();
 
 	template <class Request>
-	void push(const std::shared_ptr<Request> request)
+	void push(const std::shared_ptr<Request> &request)
 	{
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
 		pending_requests.push(request);
+	}
+
+	void cancel(int fd)
+	{
+		io_uring_sqe *sqe = getNewSubmissionQueueEntry();
+
+		if (!sqe)
+			return;
+
+		io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD);
 	}
 
 	SubmitStatus submit(std::chrono::milliseconds timeout = {});

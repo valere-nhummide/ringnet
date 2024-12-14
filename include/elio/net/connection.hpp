@@ -27,6 +27,11 @@ class Connection {
     public:
 	Connection(elio::EventLoop &loop, net::Socket &&socket);
 
+	Connection(Connection &&) = default;
+	Connection &operator=(Connection &&) = default;
+
+	~Connection();
+
 	MessagedStatus asyncRead();
 	MessagedStatus asyncWrite(std::span<const std::byte> sent_bytes);
 
@@ -62,6 +67,12 @@ class Connection {
 Connection::Connection(elio::EventLoop &loop_, Socket &&socket_)
 	: loop(std::ref(loop_)), socket(std::move(socket_)), endpoint_{ .fd = socket.fd }
 {
+}
+
+Connection::~Connection()
+{
+	if (socket)
+		loop.get().cancel(socket.fd);
 }
 
 template <class Func>

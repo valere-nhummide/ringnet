@@ -22,6 +22,8 @@ class Acceptor {
 
 	explicit Acceptor(elio::EventLoop &loop, size_t max_connections = std::numeric_limits<size_t>::max());
 
+	~Acceptor();
+
 	/// @brief Set the callback invoked on new accepted connection.
 	/// @tparam Func Type of the callback (a callable taking a Connection rvalue as argument)
 	/// @param user_callback User callback
@@ -54,6 +56,13 @@ class Acceptor {
 template <DatagramProtocol DP>
 Acceptor<DP>::Acceptor(EventLoop &loop_, size_t max_connections_) : loop(loop_), max_connections(max_connections_)
 {
+}
+
+template <DatagramProtocol DP>
+Acceptor<DP>::~Acceptor()
+{
+	if (listening_socket)
+		loop.cancel(listening_socket.fd);
 }
 
 template <DatagramProtocol DP>

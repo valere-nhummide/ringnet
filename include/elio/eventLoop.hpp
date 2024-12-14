@@ -35,6 +35,8 @@ class EventLoop {
 	template <class Request>
 	uring::AddRequestStatus add(std::shared_ptr<Request> &request, const std::shared_ptr<Subscriber> &subscriber);
 
+	void cancel(int socket_fd);
+
     private:
 	elio::uring::SubmissionQueue submission_queue;
 	using Buffer = std::array<std::byte, 2048>;
@@ -59,6 +61,11 @@ EventLoop::EventLoop(size_t request_queue_size)
 	MessagedStatus status = buffer_ring.setupBuffers(buffers);
 	if (!status)
 		std::cerr << status.what();
+}
+
+void EventLoop::cancel(int socket_fd)
+{
+	submission_queue.cancel(socket_fd);
 }
 
 void EventLoop::run()

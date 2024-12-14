@@ -29,6 +29,8 @@ class Connector {
 
 	explicit Connector(elio::EventLoop &loop);
 
+	~Connector();
+
 	template <class Func>
 	void onError(Func &&callback);
 
@@ -61,6 +63,13 @@ class Connector {
 template <DatagramProtocol DP>
 Connector<DP>::Connector(elio::EventLoop &loop_) : loop(loop_)
 {
+}
+
+template <DatagramProtocol DP>
+Connector<DP>::~Connector()
+{
+	if (socket)
+		loop.cancel(socket.fd);
 }
 
 template <DatagramProtocol DP>
