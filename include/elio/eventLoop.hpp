@@ -25,6 +25,9 @@ class EventLoop {
 	void run();
 	void stop();
 
+	template <typename Resource, typename... Args>
+	auto resource(Args &&...args);
+
 	/// @brief Add a request to be prepared, then submitted. The associated subscriber will be notified once the
 	/// request is completed.
 	/// @tparam Request Type of the request
@@ -61,6 +64,12 @@ EventLoop::EventLoop(size_t request_queue_size)
 	MessagedStatus status = buffer_ring.setupBuffers(buffers);
 	if (!status)
 		std::cerr << status.what();
+}
+
+template <typename Resource, typename... Args>
+auto EventLoop::resource(Args &&...args)
+{
+	return Resource(*this, std::forward<Args>(args)...);
 }
 
 void EventLoop::cancel(int socket_fd)

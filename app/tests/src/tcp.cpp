@@ -16,7 +16,7 @@ TEST_CASE("TCP single server, single client")
 {
 	EventLoop loop(1024);
 
-	net::Acceptor<net::TCP> server(loop);
+	auto server = loop.resource<net::Acceptor<net::TCP>>();
 	std::unique_ptr<net::Connection> server_connection;
 
 	server.onError([](events::ErrorEvent &&event) { FAIL(event.what()); });
@@ -30,7 +30,7 @@ TEST_CASE("TCP single server, single client")
 
 	SUBCASE("Client connects and sends single message to the server")
 	{
-		net::Connector<net::TCP> client(loop);
+		auto client = loop.resource<net::Connector<net::TCP>>();
 		std::unique_ptr<net::Connection> client_connection;
 		std::span<const std::byte> data = std::as_bytes(std::span("Hello, world!"));
 
@@ -52,7 +52,7 @@ TEST_CASE("TCP single server, single client")
 
 	SUBCASE("Multiple exchanges between client and server")
 	{
-		net::Connector<net::TCP> client(loop);
+		auto client = loop.resource<net::Connector<net::TCP>>();
 		std::unique_ptr<net::Connection> client_connection;
 		std::span<const std::byte> first_request = std::as_bytes(std::span("First request"));
 		std::span<const std::byte> first_response = std::as_bytes(std::span("First response"));
