@@ -35,10 +35,12 @@ class SubmissionQueue {
 	~SubmissionQueue();
 
 	template <class Request>
-	void push(const std::shared_ptr<Request> &request)
+	void push(Request &&request)
 	{
+		Request *ptr = new Request(std::move(request));
+
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-		pending_requests.push(request);
+		pending_requests.push(ptr);
 	}
 
 	void cancel(int fd)
@@ -65,11 +67,11 @@ class SubmissionQueue {
 
     private:
 	void preparePendingRequests();
-	AddRequestStatus prepare(const AcceptRequest *request);
-	AddRequestStatus prepare(const ConnectRequest *request);
-	AddRequestStatus prepare(const ReadRequest *request);
-	AddRequestStatus prepare(const MultiShotReadRequest *request);
-	AddRequestStatus prepare(const WriteRequest *request);
+	AddRequestStatus prepare(AcceptRequest *request);
+	AddRequestStatus prepare(ConnectRequest *request);
+	AddRequestStatus prepare(ReadRequest *request);
+	AddRequestStatus prepare(MultiShotReadRequest *request);
+	AddRequestStatus prepare(WriteRequest *request);
 	std::mutex pending_requests_mutex{};
 
 	io_uring ring{};
@@ -105,11 +107,7 @@ io_uring &SubmissionQueue::getRing()
 void SubmissionQueue::preparePendingRequests()
 {
 	std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-	pending_requests.cleanup();
-	pending_requests.for_each([this](const auto &request) {
-		if (auto valid_request = request.lock())
-			prepare(valid_request.get());
-	});
+	pending_requests.for_each([this](const auto &request) { prepare(request); });
 	pending_requests.clear();
 }
 
@@ -152,7 +150,7 @@ void SubmissionQueue::forEachCompletion(UnaryFunc &&function)
 		io_uring_cq_advance(&ring, processed);
 }
 
-AddRequestStatus SubmissionQueue::prepare(const AcceptRequest *request)
+AddRequestStatus SubmissionQueue::prepare(AcceptRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -164,7 +162,7 @@ AddRequestStatus SubmissionQueue::prepare(const AcceptRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ConnectRequest *request)
+AddRequestStatus SubmissionQueue::prepare(ConnectRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -176,7 +174,7 @@ AddRequestStatus SubmissionQueue::prepare(const ConnectRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const WriteRequest *request)
+AddRequestStatus SubmissionQueue::prepare(WriteRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -188,7 +186,7 @@ AddRequestStatus SubmissionQueue::prepare(const WriteRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ReadRequest *request)
+AddRequestStatus SubmissionQueue::prepare(ReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -200,7 +198,7 @@ AddRequestStatus SubmissionQueue::prepare(const ReadRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest *request)
+AddRequestStatus SubmissionQueue::prepare(MultiShotReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 

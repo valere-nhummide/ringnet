@@ -10,31 +10,18 @@ namespace elio::uring
 
 template <typename... Requests>
 class RequestContainer {
-	template <typename T>
-	using Vector = std::vector<std::weak_ptr<T>>;
-
-	std::tuple<Vector<Requests>...> requests{};
+	std::tuple<std::vector<Requests *>...> requests{};
 
     public:
 	template <class T>
-	void push(const std::shared_ptr<T> &item)
+	void push(T *request)
 	{
-		std::weak_ptr weak = item;
-		std::get<Vector<T>>(requests).push_back(weak);
+		std::get<std::vector<T *>>(requests).push_back(request);
 	}
 
 	void clear()
 	{
-		std::apply([](auto &&...elems) { ((elems.clear()), ...); }, requests);
-	}
-
-	void cleanup()
-	{
-		std::apply(
-			[](auto &&...vector) {
-				((std::erase_if(vector, [](auto request) { return request.expired(); })), ...);
-			},
-			requests);
+		std::apply([](auto &&...vector) { ((vector.clear()), ...); }, requests);
 	}
 
 	template <class UnaryFunc>
