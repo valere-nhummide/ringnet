@@ -11,7 +11,8 @@
 #include <liburing.h>
 
 #include "elio/time/chronoUtils.hpp"
-#include "elio/uring/requestContainer.hpp"
+#include "elio/uring/pendingRequests.hpp"
+#include "elio/uring/requestPool.hpp"
 #include "elio/uring/requests.hpp"
 
 namespace elio::uring
@@ -27,7 +28,8 @@ enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_RE
 /// 3. Submitted, by batch (io_uring_submit*)
 /// 4. The corresponding completion entry is processed (io_uring_for_each_cqe)
 class SubmissionQueue {
-	RequestContainer<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest>
+	RequestPool request_pool{};
+	PendingRequests<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest>
 		pending_requests{};
 
     public:
@@ -37,7 +39,8 @@ class SubmissionQueue {
 	template <class Request>
 	void push(Request &&request)
 	{
-		Request *ptr = new Request(std::move(request));
+		Request *ptr = request_pool.allocate<Request>();
+		*ptr = std::move(request);
 
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
 		pending_requests.push(ptr);
@@ -81,6 +84,29 @@ class SubmissionQueue {
 	/// @return A new submission entry if either first or second try succeeded. Otherwise, nullptr.
 	/// @note The caller should check for nullptr.
 	inline io_uring_sqe *getNewSubmissionQueueEntry();
+
+	inline void release(io_uring_cqe *cqe)
+	{
+		const uring::RequestHeader *header = reinterpret_cast<const RequestHeader *>(cqe->user_data);
+		if (!header->valid())
+			return;
+
+		switch (header->op) {
+			// Do not release multi-shot requests
+		case Operation::ACCEPT:
+		case Operation::READ_MULTISHOT:
+			return;
+		case Operation::READ:
+			request_pool.deallocate(reinterpret_cast<ReadRequest *>(cqe->user_data));
+			return;
+		case Operation::WRITE:
+			request_pool.deallocate(reinterpret_cast<WriteRequest *>(cqe->user_data));
+			return;
+		case Operation::CONNECT:
+			request_pool.deallocate(reinterpret_cast<ConnectRequest *>(cqe->user_data));
+			return;
+		}
+	}
 
 	static inline void throwOnError(int liburing_error, std::string_view message)
 	{
@@ -145,6 +171,7 @@ void SubmissionQueue::forEachCompletion(UnaryFunc &&function)
 	{
 		++processed;
 		function(cqe);
+		release(cqe);
 	}
 	if (processed)
 		io_uring_cq_advance(&ring, processed);

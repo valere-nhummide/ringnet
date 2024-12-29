@@ -9,14 +9,14 @@ namespace elio::uring
 {
 
 template <typename... Requests>
-class RequestContainer {
+class PendingRequests {
 	std::tuple<std::vector<Requests *>...> requests{};
 
     public:
-	template <class T>
-	void push(T *request)
+	template <class Request>
+	void push(Request *request)
 	{
-		std::get<std::vector<T *>>(requests).push_back(request);
+		std::get<std::vector<Request *>>(requests).push_back(request);
 	}
 
 	void clear()
