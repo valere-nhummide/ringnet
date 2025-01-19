@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <span>
 #include <tuple>
 
 #include "string.h"
@@ -27,11 +28,11 @@ struct ConnectEvent {};
 
 struct ReadEvent {
 	int fd{};
-	std::span<std::byte> bytes_read{};
+	std::span<const std::byte> bytes_read{};
 };
 
 struct WriteEvent {
 	int fd{};
-	std::span<std::byte> bytes_written{};
+	std::span<const std::byte> bytes_written{};
 };
 } // namespace elio::events

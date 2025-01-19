@@ -8,7 +8,7 @@ namespace elio::net
 {
 class Endpoint {
     public:
-	Socket::FileDescriptor fd;
+	FileDescriptor::Raw fd;
 };
 
 bool operator<(Endpoint lhs, Endpoint rhs)

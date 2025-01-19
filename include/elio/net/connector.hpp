@@ -29,6 +29,8 @@ class Connector {
 
 	explicit Connector(elio::EventLoop &loop);
 
+	~Connector();
+
 	template <class Func>
 	void onError(Func &&callback);
 
@@ -45,8 +47,7 @@ class Connector {
 
     private:
 	elio::EventLoop &loop;
-	std::shared_ptr<elio::uring::ConnectRequest> connect_request = std::make_shared<elio::uring::ConnectRequest>();
-	std::shared_ptr<elio::Subscriber> subscriber = std::make_shared<elio::Subscriber>();
+	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
 
 	elio::net::ResolvedAddress resolved_address{};
 
@@ -54,13 +55,20 @@ class Connector {
 	std::mutex connection_mutex{};
 	std::condition_variable connection_cv{};
 
-	using Socket = elio::net::Socket;
-	Socket socket{};
+	using FileDescriptor = elio::net::FileDescriptor;
+	FileDescriptor socket{};
 };
 
 template <DatagramProtocol DP>
 Connector<DP>::Connector(elio::EventLoop &loop_) : loop(loop_)
 {
+}
+
+template <DatagramProtocol DP>
+Connector<DP>::~Connector()
+{
+	if (socket)
+		loop.cancel(socket.fd);
 }
 
 template <DatagramProtocol DP>
@@ -103,10 +111,11 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 						      std::string(server_address) + ":" + std::to_string(server_port) +
 						      ": " + socket_status.what() };
 
-	connect_request->socket_fd = socket.fd;
-	std::tie(connect_request->addr, connect_request->addrlen) = resolved_address->as_sockaddr();
+	elio::uring::ConnectRequest request;
+	request.socket_fd = socket.fd;
+	std::tie(request.addr, request.addrlen) = resolved_address->as_sockaddr();
 
-	auto status = loop.add(connect_request, subscriber);
+	auto status = loop.add(request, subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

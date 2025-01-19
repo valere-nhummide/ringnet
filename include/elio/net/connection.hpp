@@ -25,10 +25,15 @@ namespace elio::net
 /// In UDP, only address resolution is required to create a connection.
 class Connection {
     public:
-	Connection(elio::EventLoop &loop, net::Socket &&socket);
+	Connection(elio::EventLoop &loop, net::FileDescriptor &&socket);
+
+	Connection(Connection &&) = default;
+	Connection &operator=(Connection &&) = default;
+
+	~Connection();
 
 	MessagedStatus asyncRead();
-	MessagedStatus asyncWrite(std::span<std::byte> sent_bytes);
+	MessagedStatus asyncWrite(std::span<const std::byte> sent_bytes);
 
 	/// @todo Add concepts
 	template <class Func>
@@ -45,23 +50,26 @@ class Connection {
     private:
 	std::reference_wrapper<elio::EventLoop> loop;
 
-	using Socket = elio::net::Socket;
-	Socket socket;
+	using FileDescriptor = elio::net::FileDescriptor;
+	FileDescriptor socket;
 
 	Endpoint endpoint_;
 
 	/// @brief The addresses of the objects submitted to the kernel should not change until they are completed:
 	/// neither the subscriber, which holds the handles, nor the requests themselves, nor any associated buffer.
 	/// Using smart pointers ensures that their address maintains valid when moving the Connection object around.
-	std::shared_ptr<elio::Subscriber> subscriber = std::make_shared<elio::Subscriber>();
-	std::shared_ptr<elio::uring::MultiShotReadRequest> read_request =
-		std::make_shared<elio::uring::MultiShotReadRequest>();
-	std::shared_ptr<elio::uring::WriteRequest> write_request = std::make_shared<elio::uring::WriteRequest>();
+	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
 };
 
-Connection::Connection(elio::EventLoop &loop_, Socket &&socket_)
+Connection::Connection(elio::EventLoop &loop_, FileDescriptor &&socket_)
 	: loop(std::ref(loop_)), socket(std::move(socket_)), endpoint_{ .fd = socket.fd }
 {
+}
+
+Connection::~Connection()
+{
+	if (socket)
+		loop.get().cancel(socket.fd);
 }
 
 template <class Func>
@@ -84,19 +92,21 @@ void Connection::onWrite(Func &&callback)
 
 MessagedStatus Connection::asyncRead()
 {
-	read_request->fd = socket.fd;
-	uring::AddRequestStatus status = loop.get().add(read_request, subscriber);
+	elio::uring::MultiShotReadRequest request;
+	request.fd = socket.fd;
+	uring::AddRequestStatus status = loop.get().add(request, subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 
 	return MessagedStatus{ true, "Success" };
 }
 
-MessagedStatus Connection::asyncWrite(std::span<std::byte> sent_bytes)
+MessagedStatus Connection::asyncWrite(std::span<const std::byte> sent_bytes)
 {
-	write_request->fd = socket.fd;
-	write_request->bytes_written = sent_bytes;
-	uring::AddRequestStatus status = loop.get().add(write_request, subscriber);
+	elio::uring::WriteRequest request;
+	request.fd = socket.fd;
+	request.bytes_written = sent_bytes;
+	uring::AddRequestStatus status = loop.get().add(request, subscriber.get());
 	if (status == elio::uring::QUEUE_FULL)
 		return MessagedStatus{ false, "Request queue is full" };
 

@@ -25,6 +25,9 @@ class EventLoop {
 	void run();
 	void stop();
 
+	template <typename Resource, typename... Args>
+	auto resource(Args &&...args);
+
 	/// @brief Add a request to be prepared, then submitted. The associated subscriber will be notified once the
 	/// request is completed.
 	/// @tparam Request Type of the request
@@ -33,7 +36,9 @@ class EventLoop {
 	/// @return Cf. enumerate
 	/// @warning The duration of both the request and the subscriber must outlive the completion.
 	template <class Request>
-	uring::AddRequestStatus add(std::shared_ptr<Request> &request, const std::shared_ptr<Subscriber> &subscriber);
+	uring::AddRequestStatus add(Request &&request, Subscriber *subscriber);
+
+	void cancel(int socket_fd);
 
     private:
 	elio::uring::SubmissionQueue submission_queue;
@@ -59,6 +64,17 @@ EventLoop::EventLoop(size_t request_queue_size)
 	MessagedStatus status = buffer_ring.setupBuffers(buffers);
 	if (!status)
 		std::cerr << status.what();
+}
+
+template <typename Resource, typename... Args>
+auto EventLoop::resource(Args &&...args)
+{
+	return Resource(*this, std::forward<Args>(args)...);
+}
+
+void EventLoop::cancel(int socket_fd)
+{
+	submission_queue.cancel(socket_fd);
 }
 
 void EventLoop::run()
@@ -169,13 +185,13 @@ void EventLoop::stop()
 }
 
 template <class Request>
-uring::AddRequestStatus EventLoop::add(std::shared_ptr<Request> &request, const std::shared_ptr<Subscriber> &subscriber)
+uring::AddRequestStatus EventLoop::add(Request &&request, Subscriber *subscriber)
 {
-	if constexpr (std::is_same_v<Request, uring::MultiShotReadRequest>)
-		request->buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
+	if constexpr (std::is_same_v<std::decay_t<Request>, uring::MultiShotReadRequest>)
+		request.buffer_group_id = buffer_ring.BUFFER_GROUP_ID;
 
-	request->header.user_data = static_cast<void *>(subscriber.get());
-	submission_queue.push(request);
+	request.header.user_data = static_cast<void *>(subscriber);
+	submission_queue.push(std::move(request));
 	return uring::AddRequestStatus::OK;
 }
 

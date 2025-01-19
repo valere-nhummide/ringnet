@@ -11,7 +11,8 @@
 #include <liburing.h>
 
 #include "elio/time/chronoUtils.hpp"
-#include "elio/uring/requestContainer.hpp"
+#include "elio/uring/pendingRequests.hpp"
+#include "elio/uring/requestPool.hpp"
 #include "elio/uring/requests.hpp"
 
 namespace elio::uring
@@ -27,7 +28,8 @@ enum SubmitStatus : int { TIMEOUT = -ETIME, INTERRUPTED_SYSCALL = -EINTR, NOT_RE
 /// 3. Submitted, by batch (io_uring_submit*)
 /// 4. The corresponding completion entry is processed (io_uring_for_each_cqe)
 class SubmissionQueue {
-	RequestContainer<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest>
+	RequestPool request_pool{};
+	PendingRequests<AcceptRequest, ConnectRequest, ReadRequest, MultiShotReadRequest, WriteRequest>
 		pending_requests{};
 
     public:
@@ -35,10 +37,23 @@ class SubmissionQueue {
 	~SubmissionQueue();
 
 	template <class Request>
-	void push(const std::shared_ptr<Request> request)
+	void push(Request &&request)
 	{
+		Request *ptr = request_pool.allocate<Request>();
+		*ptr = std::move(request);
+
 		std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-		pending_requests.push(request);
+		pending_requests.push(ptr);
+	}
+
+	void cancel(int fd)
+	{
+		io_uring_sqe *sqe = getNewSubmissionQueueEntry();
+
+		if (!sqe)
+			return;
+
+		io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL | IORING_ASYNC_CANCEL_FD);
 	}
 
 	SubmitStatus submit(std::chrono::milliseconds timeout = {});
@@ -55,11 +70,11 @@ class SubmissionQueue {
 
     private:
 	void preparePendingRequests();
-	AddRequestStatus prepare(const AcceptRequest *request);
-	AddRequestStatus prepare(const ConnectRequest *request);
-	AddRequestStatus prepare(const ReadRequest *request);
-	AddRequestStatus prepare(const MultiShotReadRequest *request);
-	AddRequestStatus prepare(const WriteRequest *request);
+	AddRequestStatus prepare(AcceptRequest *request);
+	AddRequestStatus prepare(ConnectRequest *request);
+	AddRequestStatus prepare(ReadRequest *request);
+	AddRequestStatus prepare(MultiShotReadRequest *request);
+	AddRequestStatus prepare(WriteRequest *request);
 	std::mutex pending_requests_mutex{};
 
 	io_uring ring{};
@@ -69,6 +84,29 @@ class SubmissionQueue {
 	/// @return A new submission entry if either first or second try succeeded. Otherwise, nullptr.
 	/// @note The caller should check for nullptr.
 	inline io_uring_sqe *getNewSubmissionQueueEntry();
+
+	inline void release(io_uring_cqe *cqe)
+	{
+		const uring::RequestHeader *header = reinterpret_cast<const RequestHeader *>(cqe->user_data);
+		if (!header->valid())
+			return;
+
+		switch (header->op) {
+			// Do not release multi-shot requests
+		case Operation::ACCEPT:
+		case Operation::READ_MULTISHOT:
+			return;
+		case Operation::READ:
+			request_pool.deallocate(reinterpret_cast<ReadRequest *>(cqe->user_data));
+			return;
+		case Operation::WRITE:
+			request_pool.deallocate(reinterpret_cast<WriteRequest *>(cqe->user_data));
+			return;
+		case Operation::CONNECT:
+			request_pool.deallocate(reinterpret_cast<ConnectRequest *>(cqe->user_data));
+			return;
+		}
+	}
 
 	static inline void throwOnError(int liburing_error, std::string_view message)
 	{
@@ -95,11 +133,7 @@ io_uring &SubmissionQueue::getRing()
 void SubmissionQueue::preparePendingRequests()
 {
 	std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-	pending_requests.cleanup();
-	pending_requests.for_each([this](const auto &request) {
-		if (auto valid_request = request.lock())
-			prepare(valid_request.get());
-	});
+	pending_requests.for_each([this](const auto &request) { prepare(request); });
 	pending_requests.clear();
 }
 
@@ -137,12 +171,13 @@ void SubmissionQueue::forEachCompletion(UnaryFunc &&function)
 	{
 		++processed;
 		function(cqe);
+		release(cqe);
 	}
 	if (processed)
 		io_uring_cq_advance(&ring, processed);
 }
 
-AddRequestStatus SubmissionQueue::prepare(const AcceptRequest *request)
+AddRequestStatus SubmissionQueue::prepare(AcceptRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -154,7 +189,7 @@ AddRequestStatus SubmissionQueue::prepare(const AcceptRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ConnectRequest *request)
+AddRequestStatus SubmissionQueue::prepare(ConnectRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -166,7 +201,7 @@ AddRequestStatus SubmissionQueue::prepare(const ConnectRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const WriteRequest *request)
+AddRequestStatus SubmissionQueue::prepare(WriteRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -178,7 +213,7 @@ AddRequestStatus SubmissionQueue::prepare(const WriteRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const ReadRequest *request)
+AddRequestStatus SubmissionQueue::prepare(ReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 
@@ -190,7 +225,7 @@ AddRequestStatus SubmissionQueue::prepare(const ReadRequest *request)
 	return OK;
 }
 
-AddRequestStatus SubmissionQueue::prepare(const MultiShotReadRequest *request)
+AddRequestStatus SubmissionQueue::prepare(MultiShotReadRequest *request)
 {
 	io_uring_sqe *sqe = getNewSubmissionQueueEntry();
 

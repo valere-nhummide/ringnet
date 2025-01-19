@@ -11,10 +11,6 @@
 
 namespace elio::uring
 {
-namespace raii
-{
-
-}
 template <class Buffer>
 class BufferRing {
 	static_assert(sizeof(typename Buffer::value_type) == 1, "Buffer element type must be of byte size");
