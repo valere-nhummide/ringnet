@@ -4,6 +4,7 @@
 #include <cassert>
 #include <iostream>
 
+#include "elio/errorHandler.hpp"
 #include "elio/eventHandler.hpp"
 #include "elio/events.hpp"
 #include "elio/status.hpp"
@@ -16,7 +17,6 @@ namespace elio
 
 using Subscriber = EventHandler<events::ErrorEvent, events::AcceptEvent, events::ReadEvent, events::WriteEvent,
 				events::ConnectEvent>;
-
 class EventLoop {
     public:
 	EventLoop(size_t request_queue_size);
@@ -24,6 +24,9 @@ class EventLoop {
 
 	void run();
 	void stop();
+
+	template <class Func>
+	void onError(Func &&callback);
 
 	template <typename Resource, typename... Args>
 	auto resource(Args &&...args);
@@ -54,6 +57,8 @@ class EventLoop {
 
 	inline static Subscriber *getAssociatedSubscriber(const uring::RequestHeader *header);
 
+	ErrorHandler error_handler{};
+
 	template <class Stream = std::ostream>
 	static void logIssuingRequest(Completion cqe, Stream &stream = std::cerr);
 };
@@ -63,7 +68,13 @@ EventLoop::EventLoop(size_t request_queue_size)
 {
 	MessagedStatus status = buffer_ring.setupBuffers(buffers);
 	if (!status)
-		std::cerr << status.what();
+		error_handler.handle(status.what());
+}
+
+template <class Func>
+void EventLoop::onError(Func &&callback)
+{
+	error_handler.onError(std::move(callback));
 }
 
 template <typename Resource, typename... Args>
@@ -87,26 +98,26 @@ void EventLoop::run()
 		if (submission_queue.shouldContinueSubmitting(submit_status))
 			continue;
 		else if (submit_status < 0) {
-			std::cerr << "Error submitting: " << strerror(-submit_status) << std::endl;
+			error_handler.handle(Error{ events::ErrorEvent{ .error_code = -submit_status } });
 			continue;
 		}
 
 		submission_queue.forEachCompletion([this](Completion cqe) {
 			if (!cqe->user_data) {
-				std::cerr << "Error: Malformed completion queue entry" << std::endl;
+				error_handler.handle("Error: Malformed completion queue entry");
 				return;
 			}
 
 			const uring::RequestHeader *header = reinterpret_cast<const RequestHeader *>(cqe->user_data);
 			if (!header->valid()) {
-				std::cerr << "Error: Invalid request header" << std::endl;
+				error_handler.handle("Error: Invalid request header");
 				return;
 			}
 
 			Subscriber *subscriber = getAssociatedSubscriber(header);
 
 			if (!subscriber) {
-				std::cerr << "Error: No subscriber" << std::endl;
+				error_handler.handle("Error: No subscriber");
 				return;
 			}
 
@@ -139,7 +150,7 @@ void EventLoop::run()
 
 				auto buffer_view = buffer_ring.get(cqe);
 				if (!buffer_view.has_value()) {
-					std::cerr << "Error: Invalid buffer ID" << std::endl;
+					error_handler.handle("Error: Invalid buffer ID");
 					break;
 				}
 				subscriber->handle(events::ReadEvent{
@@ -156,7 +167,7 @@ void EventLoop::run()
 				subscriber->handle(events::ConnectEvent{});
 			} break;
 			default:
-				std::cerr << "Error: Malformed completion queue entry" << std::endl;
+				error_handler.handle("Error: Malformed completion queue entry");
 				break;
 			}
 		});

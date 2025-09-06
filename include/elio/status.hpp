@@ -5,6 +5,7 @@
 
 struct MessagedStatus {
 	explicit MessagedStatus(bool success_, std::string_view message_) : success(success_), message(message_){};
+	explicit MessagedStatus(std::string_view message_) : success(false), message(message_){};
 	inline operator bool() const
 	{
 		return success;

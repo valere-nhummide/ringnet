@@ -6,7 +6,7 @@ namespace elio::uring
 {
 
 class RequestPool {
-	std::pmr::unsynchronized_pool_resource resource;
+	std::pmr::unsynchronized_pool_resource resource{};
 
     public:
 	template <class Request>
