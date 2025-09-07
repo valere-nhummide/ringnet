@@ -45,10 +45,10 @@ void AsioEchoClient::handle_write(const asio::error_code &error, size_t)
 	if (!error) {
 		// Start reading the echo response
 		auto buffer = std::make_shared<std::vector<char>>(1024);
-		asio::async_read(socket_, asio::buffer(*buffer),
-				 [this, buffer](const asio::error_code &ec, size_t bytes_transferred_) {
-					 handle_read(ec, bytes_transferred_);
-				 });
+		socket_.async_read_some(asio::buffer(*buffer),
+					[this, buffer](const asio::error_code &ec, size_t bytes_transferred_) {
+						handle_read(ec, bytes_transferred_);
+					});
 	} else {
 		std::cerr << "Client: Write error: " << error.message() << std::endl;
 	}
