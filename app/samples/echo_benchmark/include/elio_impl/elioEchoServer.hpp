@@ -9,9 +9,9 @@
 #include "elio/net/connection.hpp"
 #include "elio/net/endpoint.hpp"
 
-class EchoServer {
+class ElioEchoServer {
     public:
-	EchoServer(elio::EventLoop &loop_, size_t max_clients_count = 10);
+	ElioEchoServer(elio::EventLoop &loop_, size_t max_clients_count = 10);
 
 	void listen(std::string_view listening_address, uint16_t listening_port);
 
@@ -24,20 +24,20 @@ class EchoServer {
 	std::vector<std::byte> send_buffer{};
 };
 
-EchoServer::EchoServer(elio::EventLoop &loop_, size_t max_clients_count)
+ElioEchoServer::ElioEchoServer(elio::EventLoop &loop_, size_t max_clients_count)
 	: loop(loop_), acceptor(loop, max_clients_count)
 {
 	registerCallbacks();
 }
 
-void EchoServer::listen(std::string_view listening_address, uint16_t listening_port)
+void ElioEchoServer::listen(std::string_view listening_address, uint16_t listening_port)
 {
 	auto listening = acceptor.listen(listening_address, listening_port);
 	if (!listening)
 		std::cout << "Server: Could not listen to " << listening_address << ":" << listening_port << std::endl;
 }
 
-void EchoServer::registerCallbacks()
+void ElioEchoServer::registerCallbacks()
 {
 	acceptor.onError([](elio::events::ErrorEvent &&event) { std::cerr << "Error: " << event.what() << std::endl; });
 

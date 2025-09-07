@@ -10,9 +10,9 @@
 #include "elio/net/connection.hpp"
 #include "elio/net/connector.hpp"
 
-class EchoClient {
+class ElioEchoClient {
     public:
-	EchoClient(elio::EventLoop &loop, size_t min_bytes_count);
+	ElioEchoClient(elio::EventLoop &loop, size_t min_bytes_count);
 
 	void connect(std::string_view server_address, uint16_t server_port);
 	void send(std::string_view message);
@@ -40,12 +40,12 @@ class EchoClient {
 	std::atomic_bool has_completed = false;
 };
 
-EchoClient::EchoClient(elio::EventLoop &loop, size_t min_bytes_count_)
+ElioEchoClient::ElioEchoClient(elio::EventLoop &loop, size_t min_bytes_count_)
 	: connector(loop), min_bytes_count(min_bytes_count_)
 {
 }
 
-void EchoClient::connect(std::string_view server_address, uint16_t server_port)
+void ElioEchoClient::connect(std::string_view server_address, uint16_t server_port)
 {
 	std::cout << "Client: Connecting to " << server_address << ":" << server_port << "..." << std::endl;
 
@@ -69,7 +69,7 @@ void EchoClient::connect(std::string_view server_address, uint16_t server_port)
 	}
 }
 
-void EchoClient::onConnected()
+void ElioEchoClient::onConnected()
 {
 	assert(connection);
 
@@ -95,7 +95,7 @@ void EchoClient::onConnected()
 	connection->asyncWrite(packet);
 }
 
-void EchoClient::printResults()
+void ElioEchoClient::printResults()
 {
 	using namespace std::chrono;
 	stop = clock_t::now();
@@ -119,7 +119,7 @@ void EchoClient::printResults()
 	std::cout << " (" << byte_rate << " MB/s)\n";
 }
 
-void EchoClient::waitForCompletion()
+void ElioEchoClient::waitForCompletion()
 {
 	std::unique_lock<std::mutex> lock{ completion_mutex };
 	while (!has_completed)

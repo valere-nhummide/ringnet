@@ -54,6 +54,13 @@ class CommandLineInterface {
 			"c,clients_count", "Clients count",
 			cxxopts::value<uint64_t>()->default_value(std::to_string(DEFAULT_CLIENTS_COUNT)));
 
+		cli_options.add_options()("h,help", "Print help and exit");
+
 		cli_arguments = cli_options.parse(argc, argv);
+
+		if (cli_arguments.count("help")) {
+			std::cout << cli_options.help() << std::endl;
+			exit(0);
+		}
 	}
 };

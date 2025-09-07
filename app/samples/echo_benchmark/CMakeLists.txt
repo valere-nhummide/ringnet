@@ -3,23 +3,23 @@
 # - Using this library
 # - Using the Asio library
 
-set(TARGET ${PROJECT_NAME}-echo-benchmark)
-add_executable(${TARGET} src/elio_impl.cpp)
+set(TARGET-ELIO echo-benchmark-${PROJECT_NAME})
+add_executable(${TARGET-ELIO} src/elioEchoBenchmark.cpp)
 
-target_include_directories(${TARGET}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${TARGET-ELIO}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${TARGET} PRIVATE ${PROJECT_NAME} external::cxxopts)
+target_link_libraries(${TARGET-ELIO} PRIVATE ${PROJECT_NAME} external::cxxopts)
 
 
-set(TARGET-ASIO ${PROJECT_NAME}-echo-benchmark-asio)
-add_executable(${TARGET-ASIO} 
-    src/asio_impl.cpp
-    src/asio_impl/server.cpp
-    src/asio_impl/client.cpp
+set(TARGET-ASIO echo-benchmark-asio)
+add_executable(${TARGET-ASIO}
+    src/asioEchoBenchmark.cpp
+    src/asio_impl/asioEchoServer.cpp
+    src/asio_impl/asioEchoClient.cpp
 )
 
 target_include_directories(${TARGET-ASIO}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(${TARGET-ASIO} PRIVATE external::cxxopts external::asio)

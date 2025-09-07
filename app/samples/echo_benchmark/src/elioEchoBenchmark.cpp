@@ -3,8 +3,8 @@
 #include <thread>
 
 #include "commandLineInterface.h"
-#include "elio_impl/client.hpp"
-#include "elio_impl/server.hpp"
+#include "elio_impl/elioEchoClient.hpp"
+#include "elio_impl/elioEchoServer.hpp"
 
 #include "elio/eventLoop.hpp"
 
@@ -18,10 +18,10 @@ int main(int argc, char *argv[])
 
 	elio::EventLoop loop(1024);
 
-	EchoServer server{ loop };
+	ElioEchoServer server{ loop };
 	server.listen(address, port);
 
-	EchoClient client{ loop, bytes_count };
+	ElioEchoClient client{ loop, bytes_count };
 	client.connect(address, port);
 
 	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
