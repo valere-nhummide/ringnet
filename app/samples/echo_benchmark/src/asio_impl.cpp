@@ -2,13 +2,11 @@
 #include <string_view>
 #include <thread>
 
-#include "client.hpp"
+#include "asio_impl/client.hpp"
+#include "asio_impl/server.hpp"
 #include "commandLineInterface.h"
-#include "server.hpp"
 
-#include "elio/eventLoop.hpp"
-
-using namespace std::chrono_literals;
+#include <asio.hpp>
 
 int main(int argc, char *argv[])
 {
@@ -18,18 +16,18 @@ int main(int argc, char *argv[])
 	const uint16_t port = cli.port();
 	const uint64_t bytes_count = cli.bytes_count();
 
-	elio::EventLoop loop(1024);
+	asio::io_context io_context;
 
-	EchoServer server{ loop };
+	AsioEchoServer server{ io_context };
 	server.listen(address, port);
 
-	EchoClient client{ loop, bytes_count };
+	AsioEchoClient client{ io_context, bytes_count };
 	client.connect(address, port);
 
-	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
+	std::jthread worker_thread = std::jthread([&io_context]() { io_context.run(); });
 
 	client.waitForCompletion();
 	client.printResults();
 
-	loop.stop();
+	io_context.stop();
 }
