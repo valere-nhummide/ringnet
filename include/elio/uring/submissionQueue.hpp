@@ -69,7 +69,10 @@ class SubmissionQueue {
 	io_uring &getRing();
 
     private:
-	void preparePendingRequests();
+	/// @brief Prepare all pending requests, then clear the pending requests queue.
+	/// @return The number of prepared requests.
+	size_t preparePendingRequests();
+
 	AddRequestStatus prepare(AcceptRequest *request);
 	AddRequestStatus prepare(ConnectRequest *request);
 	AddRequestStatus prepare(ReadRequest *request);
@@ -130,11 +133,16 @@ io_uring &SubmissionQueue::getRing()
 	return ring;
 }
 
-void SubmissionQueue::preparePendingRequests()
+size_t SubmissionQueue::preparePendingRequests()
 {
 	std::lock_guard<std::mutex> lock_guard(pending_requests_mutex);
-	pending_requests.for_each([this](const auto &request) { prepare(request); });
+	size_t pending_requests_count = 0;
+	pending_requests.for_each([this, &pending_requests_count](const auto &request) {
+		++pending_requests_count;
+		prepare(request);
+	});
 	pending_requests.clear();
+	return pending_requests_count;
 }
 
 inline SubmitStatus SubmissionQueue::submit(std::chrono::milliseconds timeout)
@@ -142,7 +150,10 @@ inline SubmitStatus SubmissionQueue::submit(std::chrono::milliseconds timeout)
 	static constexpr unsigned WAITED_COMPLETIONS = 1;
 	static constexpr sigset_t *BLOCKED_SIGNALS = nullptr;
 
-	preparePendingRequests();
+	size_t prepared_requests_count = preparePendingRequests();
+
+	if (prepared_requests_count == 0)
+		return SubmitStatus{ NOT_READY };
 
 	if (timeout.count() <= 0)
 		return SubmitStatus{ io_uring_submit_and_wait(&ring, WAITED_COMPLETIONS) };
