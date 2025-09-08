@@ -14,7 +14,7 @@ endif()
 
 # Establish the project options
 option(ELIO_BUILD_SAMPLES "Set to ON to build sample"
-       ${ELIO_STANDALONE_PROJECT})
+  ${ELIO_STANDALONE_PROJECT})
 option(ELIO_BUILD_TESTS "Set to ON to build tests" ${ELIO_STANDALONE_PROJECT})
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
@@ -41,12 +41,12 @@ add_compile_options(-Wno-error=deprecated-declarations)
 add_compile_options(-Wno-missing-field-initializers)
 add_compile_options(-Wshadow)
 
-add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME} STATIC src/elio/eventLoop.cpp src/elio/net/connection.cpp src/elio/net/sockets.cpp src/elio/uring/submissionQueue.cpp)
 target_include_directories(
-  ${PROJECT_NAME} INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-                            $<INSTALL_INTERFACE:include>)
-target_link_libraries(${PROJECT_NAME} INTERFACE external::expected
-                                                external::liburing)
+  ${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include
+)
+target_link_libraries(${PROJECT_NAME} PUBLIC external::expected
+  external::liburing)
 
 if(ELIO_BUILD_SAMPLES)
   add_subdirectory(app/samples)

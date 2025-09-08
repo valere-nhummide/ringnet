@@ -11,7 +11,7 @@ class Endpoint {
 	FileDescriptor::Raw fd;
 };
 
-bool operator<(Endpoint lhs, Endpoint rhs)
+inline bool operator<(Endpoint lhs, Endpoint rhs)
 {
 	return lhs.fd < rhs.fd;
 }

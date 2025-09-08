@@ -79,25 +79,25 @@ struct WriteRequest {
 };
 static_assert(elio::traits::is_safe_for_reinterpret_cast_v<WriteRequest>);
 
-std::ostream &operator<<(std::ostream &stream, const AcceptRequest &request)
+inline std::ostream &operator<<(std::ostream &stream, const AcceptRequest &request)
 {
 	return (stream << "accept request for listening socket " << request.listening_socket_fd);
 }
-std::ostream &operator<<(std::ostream &stream, const ConnectRequest &request)
+inline std::ostream &operator<<(std::ostream &stream, const ConnectRequest &request)
 {
 	return (stream << "connect request for socket " << request.socket_fd);
 }
-std::ostream &operator<<(std::ostream &stream, const ReadRequest &request)
+inline std::ostream &operator<<(std::ostream &stream, const ReadRequest &request)
 {
 	return (stream << "single shot read request using buffer of size " << request.reception_buffer.size()
 		       << " bytes for socket " << request.fd);
 }
-std::ostream &operator<<(std::ostream &stream, const MultiShotReadRequest &request)
+inline std::ostream &operator<<(std::ostream &stream, const MultiShotReadRequest &request)
 {
 	return (stream << "multi shot read request using buffer group ID " << request.buffer_group_id << " for socket "
 		       << request.fd);
 }
-std::ostream &operator<<(std::ostream &stream, const WriteRequest &request)
+inline std::ostream &operator<<(std::ostream &stream, const WriteRequest &request)
 {
 	return (stream << "write request of " << request.bytes_written.size() << " bytes for socket " << request.fd);
 }
