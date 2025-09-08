@@ -24,13 +24,6 @@ void EventLoop::run()
 	while (should_continue) {
 		SubmitStatus submit_status = submission_queue.submit(std::chrono::milliseconds(100));
 
-		if (submission_queue.shouldContinueSubmitting(submit_status))
-			continue;
-		else if (submit_status < 0) {
-			error_handler.handle(Error{ events::ErrorEvent{ .error_code = -submit_status } });
-			continue;
-		}
-
 		submission_queue.forEachCompletion([this](Completion cqe) {
 			if (!cqe->user_data) {
 				error_handler.handle("Error: Malformed completion queue entry");
@@ -100,6 +93,13 @@ void EventLoop::run()
 				break;
 			}
 		});
+
+		if (submission_queue.shouldContinueSubmitting(submit_status))
+			continue;
+		else if (submit_status < 0) {
+			error_handler.handle(Error{ events::ErrorEvent{ .error_code = -submit_status } });
+			continue;
+		}
 	}
 }
 

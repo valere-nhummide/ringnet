@@ -4,13 +4,13 @@
 
 #include "asio_impl/asioEchoClient.hpp"
 #include "asio_impl/asioEchoServer.hpp"
-#include "commandLineInterface.h"
+#include "echoCLI.h"
 
 #include <asio.hpp>
 
 int main(int argc, char *argv[])
 {
-	CommandLineInterface cli(argc, argv);
+	EchoCLI cli(argc, argv);
 
 	const std::string_view address = cli.address();
 	const uint16_t port = cli.port();

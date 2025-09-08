@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <atomic>
+
 #include "elio/errorHandler.hpp"
 #include "elio/eventHandler.hpp"
 #include "elio/events.hpp"
@@ -41,8 +44,8 @@ class EventLoop {
 
     private:
 	elio::uring::SubmissionQueue submission_queue;
-	using Buffer = std::array<std::byte, 2048>;
-	std::array<Buffer, 128> buffers{};
+	using Buffer = std::array<std::byte, 1024>;
+	std::array<Buffer, 2048> buffers{};
 	elio::uring::BufferRing<Buffer> buffer_ring;
 	std::atomic_bool should_continue{ true };
 

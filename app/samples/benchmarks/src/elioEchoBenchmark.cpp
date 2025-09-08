@@ -2,7 +2,7 @@
 #include <string_view>
 #include <thread>
 
-#include "commandLineInterface.h"
+#include "echoCLI.h"
 #include "elio_impl/elioEchoClient.hpp"
 #include "elio_impl/elioEchoServer.hpp"
 
@@ -10,7 +10,7 @@
 
 int main(int argc, char *argv[])
 {
-	CommandLineInterface cli(argc, argv);
+	EchoCLI cli(argc, argv);
 
 	const std::string_view address = cli.address();
 	const uint16_t port = cli.port();
