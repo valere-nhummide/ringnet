@@ -24,10 +24,5 @@ int main(int argc, char *argv[])
 	AsioEchoClient client{ io_context, bytes_count };
 	client.connect(address, port);
 
-	std::jthread worker_thread = std::jthread([&io_context]() { io_context.run(); });
-
-	client.waitForCompletion();
-	client.printResults();
-
-	io_context.stop();
+	io_context.run();
 }

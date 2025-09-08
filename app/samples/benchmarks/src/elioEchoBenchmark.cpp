@@ -24,10 +24,5 @@ int main(int argc, char *argv[])
 	ElioEchoClient client{ loop, bytes_count };
 	client.connect(address, port);
 
-	std::jthread worker_thread = std::jthread([&loop]() { loop.run(); });
-
-	client.waitForCompletion();
-	client.printResults();
-
-	loop.stop();
+	loop.run();
 }

@@ -1,12 +1,9 @@
 #pragma once
 
 #include <asio.hpp>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -15,7 +12,6 @@ class AsioEchoClient {
 	AsioEchoClient(asio::io_context &io_context, size_t min_bytes_count);
 
 	void connect(std::string_view server_address, uint16_t server_port);
-	void waitForCompletion();
 	void printResults();
 
     private:
@@ -35,9 +31,4 @@ class AsioEchoClient {
 	using clock_t = std::chrono::high_resolution_clock;
 	typename clock_t::time_point start_{};
 	typename clock_t::time_point stop_{};
-
-	std::mutex completion_mutex_{};
-	std::condition_variable completion_cv_{};
-	std::atomic_bool has_completed_ = false;
-	std::atomic_bool is_connected_ = false;
 };

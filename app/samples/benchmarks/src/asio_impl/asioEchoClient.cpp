@@ -21,7 +21,6 @@ void AsioEchoClient::handle_connect(const asio::error_code &error)
 {
 	if (!error) {
 		std::cout << "Client: Connected successfully" << std::endl;
-		is_connected_ = true;
 		start_ = clock_t::now();
 		send_packet();
 	} else {
@@ -31,9 +30,6 @@ void AsioEchoClient::handle_connect(const asio::error_code &error)
 
 void AsioEchoClient::send_packet()
 {
-	if (!is_connected_)
-		return;
-
 	asio::async_write(socket_, asio::buffer(packet_),
 			  [this](const asio::error_code &error, size_t bytes_transferred) {
 				  handle_write(error, bytes_transferred);
@@ -64,20 +60,11 @@ void AsioEchoClient::handle_read(const asio::error_code &error, size_t bytes_tra
 			send_packet();
 		} else {
 			// We've reached our target
-			std::lock_guard<std::mutex> lock{ completion_mutex_ };
-			has_completed_ = true;
-			completion_cv_.notify_all();
+			printResults();
+			std::exit(0);
 		}
 	} else {
 		std::cerr << "Client: Read error: " << error.message() << std::endl;
-	}
-}
-
-void AsioEchoClient::waitForCompletion()
-{
-	std::unique_lock<std::mutex> lock{ completion_mutex_ };
-	while (!has_completed_) {
-		completion_cv_.wait(lock, [this]() { return has_completed_.load(); });
 	}
 }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <span>
@@ -34,10 +33,6 @@ class ElioEchoClient {
 	using clock_t = std::chrono::high_resolution_clock;
 	typename clock_t::time_point start{};
 	typename clock_t::time_point stop{};
-
-	std::mutex completion_mutex{};
-	std::condition_variable completion_cv{};
-	std::atomic_bool has_completed = false;
 };
 
 ElioEchoClient::ElioEchoClient(elio::EventLoop &loop, size_t min_bytes_count_)
@@ -85,9 +80,8 @@ void ElioEchoClient::onConnected()
 		if (received_bytes_count < min_bytes_count)
 			connection->asyncWrite(packet);
 		else {
-			std::lock_guard<std::mutex> lock{ completion_mutex };
-			has_completed = true;
-			completion_cv.notify_all();
+			printResults();
+			std::exit(0);
 		}
 	});
 	connection->asyncRead();
@@ -117,11 +111,4 @@ void ElioEchoClient::printResults()
 		std::cout << elapsed;
 
 	std::cout << " (" << byte_rate << " MB/s)\n";
-}
-
-void ElioEchoClient::waitForCompletion()
-{
-	std::unique_lock<std::mutex> lock{ completion_mutex };
-	while (!has_completed)
-		completion_cv.wait(lock, [this]() { return has_completed.load(); });
 }

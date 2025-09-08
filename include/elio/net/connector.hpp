@@ -1,9 +1,6 @@
 #pragma once
 
 #include <array>
-#include <atomic>
-#include <condition_variable>
-#include <mutex>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -43,8 +40,6 @@ class Connector {
 
 	MessagedStatus asyncConnect(std::string_view server_address, uint16_t server_port);
 
-	void waitForConnection();
-
     private:
 	elio::EventLoop &loop;
 	std::unique_ptr<elio::Subscriber> subscriber = std::make_unique<elio::Subscriber>();
@@ -52,8 +47,6 @@ class Connector {
 	elio::net::ResolvedAddress resolved_address{};
 
 	std::atomic<Connector<DP>::Status> connection_status = Connector<DP>::Status::DISCONNECTED;
-	std::mutex connection_mutex{};
-	std::condition_variable connection_cv{};
 
 	using FileDescriptor = elio::net::FileDescriptor;
 	FileDescriptor socket{};
@@ -84,9 +77,7 @@ void Connector<DP>::onConnection(Func user_callback)
 {
 	subscriber->on<elio::events::ConnectEvent>([this, user_callback](const elio::events::ConnectEvent &) {
 		user_callback(Connection{ loop, std::move(socket) });
-		std::lock_guard<std::mutex> lock{ connection_mutex };
 		connection_status = Status::CONNECTED;
-		connection_cv.notify_all();
 	});
 }
 
@@ -121,14 +112,6 @@ MessagedStatus Connector<DP>::asyncConnect(std::string_view server_address, uint
 
 	connection_status = Status::PENDING;
 	return MessagedStatus{ true, "Pending connection" };
-}
-
-template <DatagramProtocol DP>
-void Connector<DP>::waitForConnection()
-{
-	std::unique_lock<std::mutex> lock{ connection_mutex };
-	while (connection_status != Status::CONNECTED)
-		connection_cv.wait(lock, [this]() { return (connection_status == Status::CONNECTED); });
 }
 
 } // namespace elio::net
