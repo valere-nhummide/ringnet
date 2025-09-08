@@ -81,13 +81,13 @@ void AsioEchoClient::printResults()
 
 	std::cout << "Exchanged " << received_bytes_count_ << " bytes in ";
 	if (elapsed.count() > seconds::period::den)
-		std::cout << duration_cast<seconds>(elapsed);
+		std::cout << duration_cast<seconds>(elapsed).count() << "s";
 	else if (elapsed.count() > milliseconds::period::den)
-		std::cout << duration_cast<milliseconds>(elapsed);
+		std::cout << duration_cast<milliseconds>(elapsed).count() << "ms";
 	else if (elapsed.count() > microseconds::period::den)
-		std::cout << duration_cast<microseconds>(elapsed);
+		std::cout << duration_cast<microseconds>(elapsed).count() << "μs";
 	else
-		std::cout << elapsed;
+		std::cout << elapsed.count() << "ns";
 
 	std::cout << " (" << byte_rate << " MB/s)\n";
 }

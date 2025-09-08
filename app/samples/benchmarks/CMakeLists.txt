@@ -3,13 +3,13 @@
 # - Using this library
 # - Using the Asio library
 
-set(TARGET-ELIO echo-benchmark-${PROJECT_NAME})
-add_executable(${TARGET-ELIO} src/elioEchoBenchmark.cpp)
+set(TARGET-RINGNET echo-benchmark-${PROJECT_NAME})
+add_executable(${TARGET-RINGNET} src/ringnetEchoBenchmark.cpp)
 
-target_include_directories(${TARGET-ELIO}
+target_include_directories(${TARGET-RINGNET}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${TARGET-ELIO} PRIVATE ${PROJECT_NAME} external::cxxopts)
+target_link_libraries(${TARGET-RINGNET} PRIVATE ${PROJECT_NAME} external::cxxopts)
 
 
 set(TARGET-ASIO echo-benchmark-asio)
@@ -26,13 +26,13 @@ target_link_libraries(${TARGET-ASIO} PRIVATE external::cxxopts external::asio)
 
 
 # TCP writer: TCP client sending data to a server until stopped.
-set(TARGET-ELIO-TCP-WRITER tcp-writer-${PROJECT_NAME})
-add_executable(${TARGET-ELIO-TCP-WRITER} src/elioTcpWriter.cpp src/elio_impl/elioTcpWriterClient.cpp)
+set(TARGET-RINGNET-TCP-WRITER tcp-writer-${PROJECT_NAME})
+add_executable(${TARGET-RINGNET-TCP-WRITER} src/ringnetTcpWriter.cpp src/ringnet_impl/ringnetTcpWriterClient.cpp)
 
-target_include_directories(${TARGET-ELIO-TCP-WRITER}
+target_include_directories(${TARGET-RINGNET-TCP-WRITER}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${TARGET-ELIO-TCP-WRITER} PRIVATE ${PROJECT_NAME} external::cxxopts)
+target_link_libraries(${TARGET-RINGNET-TCP-WRITER} PRIVATE ${PROJECT_NAME} external::cxxopts)
 
 
 # Asio TCP reader: TCP server receiving data from a client until stopped.
@@ -45,11 +45,11 @@ target_include_directories(${TARGET-ASIO-TCP-READER}
 target_link_libraries(${TARGET-ASIO-TCP-READER} PRIVATE external::cxxopts external::asio)
 
 
-# Elio TCP reader: TCP server receiving data from a client until stopped.
-set(TARGET-ELIO-TCP-READER tcp-reader-${PROJECT_NAME})
-add_executable(${TARGET-ELIO-TCP-READER} src/elioTcpReader.cpp src/elio_impl/elioTcpReaderServer.cpp)
+# Ringnet TCP reader: TCP server receiving data from a client until stopped.
+set(TARGET-RINGNET-TCP-READER tcp-reader-${PROJECT_NAME})
+add_executable(${TARGET-RINGNET-TCP-READER} src/ringnetTcpReader.cpp src/ringnet_impl/ringnetTcpReaderServer.cpp)
 
-target_include_directories(${TARGET-ELIO-TCP-READER}
+target_include_directories(${TARGET-RINGNET-TCP-READER}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${TARGET-ELIO-TCP-READER} PRIVATE ${PROJECT_NAME} external::cxxopts)
+target_link_libraries(${TARGET-RINGNET-TCP-READER} PRIVATE ${PROJECT_NAME} external::cxxopts)

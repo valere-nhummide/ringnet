@@ -3,14 +3,14 @@
 
 #include <doctest.h>
 
-#include "elio/net/acceptor.hpp"
-#include "elio/net/connection.hpp"
-#include "elio/net/connector.hpp"
+#include "ringnet/net/acceptor.hpp"
+#include "ringnet/net/connection.hpp"
+#include "ringnet/net/connector.hpp"
 
 #include "operators.hpp"
 
-using namespace elio;
-using namespace elio::test;
+using namespace ringnet;
+using namespace ringnet::test;
 
 inline std::string to_string(std::span<const std::byte> data)
 {

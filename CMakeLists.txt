@@ -1,21 +1,20 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(PROJECT_NAME "elio")
+set(PROJECT_NAME "ringnet")
 project(
   ${PROJECT_NAME}
   VERSION 0.1
   LANGUAGES CXX)
 
 # Determine whether this is a standalone project or included by other projects
-set(ELIO_STANDALONE_PROJECT OFF)
+set(RINGNET_STANDALONE_PROJECT OFF)
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-  set(ELIO_STANDALONE_PROJECT ON)
+  set(RINGNET_STANDALONE_PROJECT ON)
 endif()
 
 # Establish the project options
-option(ELIO_BUILD_SAMPLES "Set to ON to build sample"
-  ${ELIO_STANDALONE_PROJECT})
-option(ELIO_BUILD_TESTS "Set to ON to build tests" ${ELIO_STANDALONE_PROJECT})
+option(RINGNET_BUILD_SAMPLES "Set to ON to build sample" ${RINGNET_STANDALONE_PROJECT})
+option(RINGNET_BUILD_TESTS "Set to ON to build tests" ${RINGNET_STANDALONE_PROJECT})
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 add_link_options($<$<STREQUAL:"${CMAKE_BUILD_TYPE}","Debug">:-rdynamic>)
@@ -41,17 +40,17 @@ add_compile_options(-Wno-error=deprecated-declarations)
 add_compile_options(-Wno-missing-field-initializers)
 add_compile_options(-Wshadow)
 
-add_library(${PROJECT_NAME} STATIC src/elio/eventLoop.cpp src/elio/net/connection.cpp src/elio/net/sockets.cpp src/elio/uring/submissionQueue.cpp)
+add_library(${PROJECT_NAME} STATIC src/ringnet/eventLoop.cpp src/ringnet/net/connection.cpp src/ringnet/net/sockets.cpp src/ringnet/uring/submissionQueue.cpp)
 target_include_directories(
   ${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/include
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC external::expected
   external::liburing)
 
-if(ELIO_BUILD_SAMPLES)
+if(RINGNET_BUILD_SAMPLES)
   add_subdirectory(app/samples)
 endif()
 
-if(ELIO_BUILD_TESTS)
+if(RINGNET_BUILD_TESTS)
   add_subdirectory(app/tests)
 endif()

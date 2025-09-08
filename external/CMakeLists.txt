@@ -116,7 +116,7 @@ FetchContent_MakeAvailable(tl_expected)
 add_library(external::expected ALIAS expected)
 
 
-if(ELIO_BUILD_SAMPLES)
+if(RINGNET_BUILD_SAMPLES)
   FetchContent_Declare(asio SYSTEM URL ${CMAKE_CURRENT_SOURCE_DIR}/archives/asio-asio-1-36-0.tar.gz)
   FetchContent_MakeAvailable(asio)
 
