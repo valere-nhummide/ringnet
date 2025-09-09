@@ -4,9 +4,9 @@ A high-performance C++ networking library built on top of Linux io_uring for asy
 
 ## Overview
 
-RingNet is a C++20 networking library that leverages Linux's io_uring interface to provide efficient asynchronous I/O operations. The library implements advanced io_uring features such as batching, multi-shot operations, and provided buffers to achieve ultra-low latency and zero-copy networking.
+RingNet is a C++20 networking library that leverages Linux's io_uring interface to provide efficient asynchronous I/O operations. The library implements advanced io_uring features such as batching, multi-shot operations, and provided buffers, to achieve low latency, zero-copy networking.
 
-It offers an event-driven architecture similar to existing asynchronous I/O libraries, but specifically optimized for io_uring's capabilities. This includes advanced buffer management features that may limit cross-platform compatibility but provide significant performance benefits on Linux systems.
+It offers an event-driven architecture similar to existing asynchronous I/O libraries, but specifically optimized for io_uring's capabilities. This includes Linux-specific features, that may limit cross-platform compatibility but provide performance benefits on Linux systems.
 
 ## Features
 
@@ -19,15 +19,15 @@ It offers an event-driven architecture similar to existing asynchronous I/O libr
 ### 🎯 Planned Features
 
 - **Portable API design** - Clean API that facilitates migration from/to other networking libraries
-- **Performance optimizations** - Advanced optimizations leveraging io_uring's unique capabilities
+- **Optimizations** - Hunt allocations and pointer chasing, challenge the use of `std::function`
 - **C++20 coroutine support** - Native coroutine integration for simplified async programming
-- **UDP networking** - High-performance UDP client and server implementations
-- **File I/O support** - Optional file operations (secondary priority)
-- **Latency monitoring** - Built-in tools for measuring and analyzing network latency
+- **UDP networking** - UDP client and server implementations
+- **Disk I/O support** - Optional disk operations with io_uring (secondary priority)
+- **Latency monitoring** - Built-in tools to measure latency and overhead
 
 ## Requirements
 
-- Linux kernel with io_uring support (6.0+)
+- Linux kernel with io_uring support, including provided buffers (5.7)
 - C++20 compatible compiler
 - CMake 3.20+
 
@@ -46,7 +46,7 @@ See the sample applications in the `app/samples` folder for usage examples and b
 
 ## Performance
 
-The primary goal of this library is to fully leverage io_uring's advanced features, as described by Jens Axboe in [io_uring and networking in 2023](https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023).  
+The primary goal of this library is to fully leverage io_uring's advanced features, as described by Jens Axboe in [io_uring and networking in 2023](https://github.com/axboe/liburing/wiki/io_uring-and-networking-in-2023).
 
 The library includes comprehensive benchmarking tools that compare performance against ASIO, which also supports io_uring. As of December 2024, ASIO does not implement all advanced io_uring features, making it an ideal reference point for performance comparisons and validation.
 
@@ -64,4 +64,4 @@ Contributions are welcome! Please feel free to submit issues, feature requests, 
 
 ## Author
 
-**Valère Nhummide** - *Initial work* - [valere-nhummide](https://github.com/valere-nhummide)
+**Valère Nhummide** - _Initial work_ - [valere-nhummide](https://github.com/valere-nhummide)
